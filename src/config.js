@@ -24,7 +24,7 @@ const config = {
 
   telegram: {
     botToken: process.env.TELEGRAM_BOT_TOKEN,
-    chatId: process.env.TELEGRAM_CHAT_ID || '1304208404',
+    chatId: process.env.TELEGRAM_CHAT_ID,
   },
 
   schedule: {
