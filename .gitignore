@@ -3,3 +3,10 @@ node_modules/
 data/
 logs/
 coverage/
+
+# Claude Code local settings
+.claude/
+
+# Local launchd daemon (use exec-briefing.plist.example as template)
+*.plist
+
