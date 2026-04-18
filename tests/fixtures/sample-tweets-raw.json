@@ -1,0 +1,125 @@
+[
+  {
+    "id": "1234567890123456789",
+    "text": "BREAKING: Israeli forces strike Hezbollah command center in southern Lebanon",
+    "createdAt": "2026-03-31T18:30:00.000Z",
+    "author": {
+      "id": "987654321",
+      "userName": "IntelCrab",
+      "name": "Intel Crab",
+      "followers": 450000,
+      "following": 1200,
+      "profilePicture": "https://pbs.twimg.com/profile_images/example/photo.jpg",
+      "coverPicture": "https://pbs.twimg.com/profile_banners/example/banner.jpg",
+      "profile_bio": {
+        "description": "Real-time intelligence and breaking news",
+        "entities": {}
+      },
+      "isVerified": true,
+      "isBlueVerified": true
+    },
+    "likeCount": 2340,
+    "retweetCount": 891,
+    "viewCount": 450000,
+    "bookmarkCount": 234,
+    "source": "Twitter Web App",
+    "conversationId": "1234567890123456789",
+    "inReplyToId": null,
+    "displayTextRange": [0, 75],
+    "entities": {
+      "urls": [
+        {
+          "url": "https://t.co/abc123",
+          "expandedUrl": "https://example.com/article",
+          "displayUrl": "example.com/article"
+        }
+      ],
+      "hashtags": [],
+      "media": []
+    },
+    "extendedEntities": {
+      "media": []
+    },
+    "card": {
+      "type": "summary_large_image",
+      "binding_values": {
+        "title": { "value": "Israeli forces strike Hezbollah" },
+        "description": { "value": "Article description here" }
+      },
+      "user_refs_results": []
+    },
+    "quoted_tweet": null
+  },
+  {
+    "id": "1234567890123456790",
+    "text": "S&P 500 futures down 0.8% as markets react to geopolitical tensions in Middle East",
+    "createdAt": "2026-03-31T18:45:00.000Z",
+    "author": {
+      "id": "111222333",
+      "userName": "FinancialJuice",
+      "name": "FinancialJuice",
+      "followers": 380000,
+      "following": 500,
+      "profilePicture": "https://pbs.twimg.com/profile_images/fj/photo.jpg",
+      "coverPicture": "https://pbs.twimg.com/profile_banners/fj/banner.jpg",
+      "profile_bio": {
+        "description": "Breaking financial news",
+        "entities": {}
+      },
+      "isVerified": false,
+      "isBlueVerified": true
+    },
+    "likeCount": 567,
+    "retweetCount": 213,
+    "viewCount": 89000,
+    "bookmarkCount": 78,
+    "source": "TweetDeck",
+    "conversationId": "1234567890123456790",
+    "inReplyToId": null,
+    "displayTextRange": [0, 83],
+    "entities": {
+      "urls": [],
+      "hashtags": [{"text": "SP500"}, {"text": "Markets"}],
+      "media": []
+    },
+    "extendedEntities": null,
+    "card": null,
+    "quoted_tweet": null
+  },
+  {
+    "id": "1234567890123456791",
+    "text": "Reports indicate North Korea test-fired ballistic missile into Sea of Japan",
+    "createdAt": "2026-03-31T18:55:00.000Z",
+    "author": {
+      "id": "444555666",
+      "userName": "sentdefender",
+      "name": "Sentinel Defense",
+      "followers": 210000,
+      "following": 890,
+      "profilePicture": "https://pbs.twimg.com/profile_images/sd/photo.jpg",
+      "coverPicture": null,
+      "profile_bio": {
+        "description": "Defense intelligence and geopolitics",
+        "entities": {}
+      },
+      "isVerified": false,
+      "isBlueVerified": false
+    },
+    "likeCount": 1890,
+    "retweetCount": 634,
+    "viewCount": 320000,
+    "bookmarkCount": 445,
+    "source": "Twitter for iPhone",
+    "conversationId": "1234567890123456791",
+    "inReplyToId": null,
+    "displayTextRange": [0, 74],
+    "entities": {
+      "urls": [],
+      "hashtags": [],
+      "media": []
+    },
+    "extendedEntities": null,
+    "card": null,
+    "quoted_tweet": null
+  }
+]

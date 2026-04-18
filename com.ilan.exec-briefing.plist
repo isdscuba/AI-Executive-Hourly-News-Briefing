@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.ilan.exec-briefing</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/opt/node@22/bin/node</string>
+    <string>/Volumes/home/Drive/APPS/executive-news/src/index.js</string>
+  </array>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>NODE_ENV</key>
+    <string>production</string>
+  </dict>
+
+  <key>WorkingDirectory</key>
+  <string>/Volumes/home/Drive/APPS/executive-news</string>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>/Users/staciedee/Library/Logs/exec-briefing/stdout.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/Users/staciedee/Library/Logs/exec-briefing/stderr.log</string>
+</dict>
+</plist>

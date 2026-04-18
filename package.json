@@ -1,0 +1,43 @@
+{
+  "name": "exec-news-briefing",
+  "version": "1.0.0",
+  "description": "Hourly executive intelligence briefing via Twitter, Gemini, and Telegram",
+  "private": true,
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "run-once": "node -e \"require('./src/briefing').runBriefingPipeline().catch(console.error)\"",
+    "test": "jest",
+    "test:unit": "jest tests/unit",
+    "test:integration": "jest tests/integration",
+    "test:coverage": "jest --coverage",
+    "test:watch": "jest --watch"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.21.0",
+    "dotenv": "^16.0.0",
+    "node-cron": "^3.0.0"
+  },
+  "devDependencies": {
+    "jest": "^29.0.0",
+    "jest-fetch-mock": "^3.0.3"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "clearMocks": true,
+    "coverageDirectory": "coverage",
+    "collectCoverageFrom": [
+      "src/**/*.js",
+      "!src/index.js"
+    ],
+    "testMatch": [
+      "**/tests/**/*.test.js"
+    ],
+    "setupFiles": [
+      "./tests/setup.js"
+    ]
+  }
+}
