@@ -54,6 +54,31 @@ function filterNewTweets(strippedBatches, sinceTimestamp) {
 }
 
 /**
+ * Filters tweet batches against tweet texts seen in any recent run.
+ * Prevents identical tweets (API overlap or slow-moving stories) from
+ * being counted as "new" and sent to Gemini again.
+ */
+function dedupeAgainstRecentTweets(filteredBatches, recentTweets) {
+  if (!recentTweets || recentTweets.length === 0) return filteredBatches;
+
+  const seenTexts = new Set(
+    recentTweets.flatMap(batch =>
+      Object.values(batch).flat().map(t => t.text)
+    )
+  );
+
+  const dedup = tweets => tweets.filter(t => !seenTexts.has(t.text));
+
+  return {
+    tweets1: dedup(filteredBatches.tweets1),
+    tweets2: dedup(filteredBatches.tweets2),
+    tweets3: dedup(filteredBatches.tweets3),
+    tweets4: dedup(filteredBatches.tweets4),
+    tweets5: dedup(filteredBatches.tweets5),
+  };
+}
+
+/**
  * Main pipeline.
  *
  * @param {Object} opts
@@ -83,15 +108,20 @@ async function runBriefingPipeline({ isOpeningBrief = false } = {}) {
   log(`Payload: ${Math.round(rawBytes / 1024)}KB → ${Math.round(strippedBytes / 1024)}KB after strip (~${reductionPct}% reduction)`);
 
   // Step 3: Load previous run state
-  const { lastRunAt, lastBriefText } = getState();
+  const { lastRunAt, recentBriefs, recentTweets } = getState();
 
   // Step 4: Filter to new tweets only
   // Opening brief: filter since midnight ET (ignore lastRunAt — we want all overnight news)
   // Normal run: filter since last run timestamp
   const filterSince = isOpeningBrief ? midnightEtUtc : lastRunAt;
-  const newTweets = filterNewTweets(stripped, filterSince);
+  const timestampFiltered = filterNewTweets(stripped, filterSince);
+
+  // Step 4b: Tweet-level dedup — remove tweet texts already seen in the last 3 runs
+  const newTweets = dedupeAgainstRecentTweets(timestampFiltered, recentTweets);
   const newTotal = Object.values(newTweets).reduce((a, b) => a + b.length, 0);
-  log(`New tweets since ${filterSince || 'beginning'}: ${newTotal}`);
+  const tsTotal = Object.values(timestampFiltered).reduce((a, b) => a + b.length, 0);
+  const dedupedCount = tsTotal - newTotal;
+  log(`New tweets since ${filterSince || 'beginning'}: ${tsTotal} (${dedupedCount} deduped against recent runs) → ${newTotal} unique`);
 
   // Step 5: Guard — skip if nothing new
   if (newTotal === 0) {
@@ -100,19 +130,18 @@ async function runBriefingPipeline({ isOpeningBrief = false } = {}) {
   }
 
   // Step 6: Generate brief
-  // Pass lastBriefText for story-level dedup even on opening brief
-  // (avoids re-reporting the last story from the night before)
+  // Pass recentBriefs array for story-level dedup (covers last 3 hours of coverage)
   const newBytes = Buffer.byteLength(JSON.stringify(newTweets), 'utf8');
-  log(`Sending ${Math.round(newBytes / 1024)}KB to Gemini (${newTotal} tweets, story dedup: ${lastBriefText ? 'yes' : 'first run'})...`);
+  log(`Sending ${Math.round(newBytes / 1024)}KB to Gemini (${newTotal} tweets, story dedup: ${recentBriefs.length} prior briefs | tweet dedup: ${recentTweets.length} prior sets)...`);
 
   let briefText;
   try {
-    briefText = await generateBrief(newTweets, lastBriefText);
+    briefText = await generateBrief(newTweets, recentBriefs);
   } catch (err) {
     log(`Gemini failed (attempt 1): ${err.message}. Retrying in 10s...`);
     await sleep(10_000);
     try {
-      briefText = await generateBrief(newTweets, lastBriefText);
+      briefText = await generateBrief(newTweets, recentBriefs);
     } catch (retryErr) {
       log(`Gemini failed (attempt 2): ${retryErr.message}. Skipping run.`);
       return;
@@ -136,13 +165,13 @@ async function runBriefingPipeline({ isOpeningBrief = false } = {}) {
     log(`Telegram failed: ${err.message}. Continuing to save state.`);
   }
 
-  // Step 8: Save state for next run
+  // Step 8: Save state for next run (brief text + tweet batches for dedup)
   try {
-    saveState(cappedBrief);
+    saveState(cappedBrief, newTweets);
     log('Pipeline complete.');
   } catch (err) {
     log(`State save failed: ${err.message}. Next run will reprocess tweets.`);
   }
 }
 
-module.exports = { runBriefingPipeline, filterNewTweets, getMidnightEtUtc };
+module.exports = { runBriefingPipeline, filterNewTweets, getMidnightEtUtc, dedupeAgainstRecentTweets };

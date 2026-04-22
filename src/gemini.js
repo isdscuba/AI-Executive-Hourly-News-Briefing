@@ -13,11 +13,11 @@ function getGenAI() {
 /**
  * Generates an intelligence briefing from stripped tweet batches.
  *
- * @param {Object} strippedBatches  - { tweets1..5 } — new tweets only (timestamp-filtered)
- * @param {string|null} lastBriefText - previous brief output for story-level dedup, or null on first run
+ * @param {Object} strippedBatches  - { tweets1..5 } — new tweets only (timestamp + text filtered)
+ * @param {string[]} recentBriefs   - array of up to 3 previous brief texts (newest first), or []
  * @returns {string} Generated brief text
  */
-async function generateBrief(strippedBatches, lastBriefText) {
+async function generateBrief(strippedBatches, recentBriefs) {
   const { tweets1, tweets2, tweets3, tweets4, tweets5 } = strippedBatches;
 
   const prompt = buildPrompt({
@@ -26,7 +26,7 @@ async function generateBrief(strippedBatches, lastBriefText) {
     tweets3Json: JSON.stringify(tweets3),
     tweets4Json: JSON.stringify(tweets4),
     tweets5Json: JSON.stringify(tweets5),
-    lastBriefText: lastBriefText || null,
+    recentBriefs: recentBriefs || [],
     currentUtcDatetime: new Date().toISOString(),
   });
 
@@ -42,15 +42,22 @@ async function generateBrief(strippedBatches, lastBriefText) {
   return result.response.text();
 }
 
-function buildPrompt({ tweets1Json, tweets2Json, tweets3Json, tweets4Json, tweets5Json, lastBriefText, currentUtcDatetime }) {
-  const deduplicationSection = lastBriefText
-    ? `STORY EXCLUSION LIST — these stories were already reported. Do NOT repeat a story unless the new tweet adds a materially new data point: a new specific statistic (e.g. "70% of steel production"), a new named casualty count, a new location, a confirmed escalation, or a named official statement not in the previous brief. If the new tweet is essentially the same fact restated, skip it. If it contains genuinely new information, include it as a fresh item:
-<PREVIOUS_BRIEF_DO_NOT_OUTPUT>
-${lastBriefText}
-</PREVIOUS_BRIEF_DO_NOT_OUTPUT>
+function buildDeduplicationSection(recentBriefs) {
+  if (!recentBriefs || recentBriefs.length === 0) return '';
 
-`
-    : '';
+  const briefBlocks = recentBriefs
+    .map((brief, i) =>
+      `<PREVIOUS_BRIEF_${i + 1}_DO_NOT_OUTPUT>\n${brief}\n</PREVIOUS_BRIEF_${i + 1}_DO_NOT_OUTPUT>`)
+    .join('\n\n');
+
+  return `STORY EXCLUSION LIST — these stories were already reported in the last ${recentBriefs.length} brief${recentBriefs.length > 1 ? 's' : ''}. Do NOT repeat a story unless the new tweet adds a materially new data point: a new specific statistic (e.g. "70% of steel production"), a new named casualty count, a new location, a confirmed escalation, or a named official statement not present in any previous brief. If the new tweet is essentially the same fact restated, skip it. If it contains genuinely new information, include it as a fresh item:
+${briefBlocks}
+
+`;
+}
+
+function buildPrompt({ tweets1Json, tweets2Json, tweets3Json, tweets4Json, tweets5Json, recentBriefs, currentUtcDatetime }) {
+  const deduplicationSection = buildDeduplicationSection(recentBriefs);
 
   return `You are an Executive Intelligence Analyst producing a real-time situational awareness briefing for C-suite leadership.
 
@@ -113,4 +120,4 @@ ${tweets4Json}
 ${tweets5Json}`;
 }
 
-module.exports = { generateBrief, buildPrompt };
+module.exports = { generateBrief, buildPrompt, buildDeduplicationSection };

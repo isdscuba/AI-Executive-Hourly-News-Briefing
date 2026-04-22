@@ -17,7 +17,7 @@ jest.mock('../../src/config', () => ({
   telegram: { botToken: 'test-bot-token', chatId: '1304208404' },
 }));
 
-const mockGetState = jest.fn(() => ({ lastRunAt: null, lastBriefText: null }));
+const mockGetState = jest.fn(() => ({ lastRunAt: null, recentBriefs: [], recentTweets: [] }));
 const mockSaveState = jest.fn();
 jest.mock('../../src/state', () => ({
   getState: mockGetState,
@@ -34,7 +34,7 @@ describe('Full pipeline integration', () => {
   beforeEach(() => {
     fetchMock.resetMocks();
     mockGenerateContent.mockResolvedValue({ response: { text: () => '🚨 URGENT\n🚨 Test item\n\n📈 MARKETS\nUpdate' } });
-    mockGetState.mockReturnValue({ lastRunAt: null, lastBriefText: null });
+    mockGetState.mockReturnValue({ lastRunAt: null, recentBriefs: [], recentTweets: [] });
     mockSaveState.mockReset();
   });
 
@@ -65,8 +65,8 @@ describe('Full pipeline integration', () => {
     expect(prompt).not.toContain('likeCount');
   });
 
-  it('includes previous brief in prompt when lastBriefText is set (story dedup)', async () => {
-    mockGetState.mockReturnValue({ lastRunAt: null, lastBriefText: 'Previous hour intel here' });
+  it('includes previous brief in prompt when recentBriefs is set (story dedup)', async () => {
+    mockGetState.mockReturnValue({ lastRunAt: null, recentBriefs: ['Previous hour intel here'], recentTweets: [] });
     fetchMock.mockResponses(
       [twitterResp(rawFixture), { status: 200 }],
       [twitterResp([]), { status: 200 }], [twitterResp([]), { status: 200 }],
@@ -81,7 +81,7 @@ describe('Full pipeline integration', () => {
   });
 
   it('omits story exclusion section on first run', async () => {
-    mockGetState.mockReturnValue({ lastRunAt: null, lastBriefText: null });
+    mockGetState.mockReturnValue({ lastRunAt: null, recentBriefs: [], recentTweets: [] });
     fetchMock.mockResponses(
       [twitterResp(rawFixture), { status: 200 }],
       [twitterResp([]), { status: 200 }], [twitterResp([]), { status: 200 }],
@@ -94,7 +94,7 @@ describe('Full pipeline integration', () => {
     expect(prompt).not.toContain('STORY EXCLUSION LIST');
   });
 
-  it('saves state with the generated brief text', async () => {
+  it('saves state with the generated brief text and tweet batches', async () => {
     const BRIEF = '🚨 UNIQUE BRIEF';
     mockGenerateContent.mockResolvedValue({ response: { text: () => BRIEF } });
     fetchMock.mockResponses(
@@ -105,12 +105,12 @@ describe('Full pipeline integration', () => {
     );
     const { runBriefingPipeline } = require('../../src/briefing');
     await runBriefingPipeline();
-    expect(mockSaveState).toHaveBeenCalledWith(BRIEF);
+    expect(mockSaveState).toHaveBeenCalledWith(BRIEF, expect.any(Object));
   });
 
   it('filters out old tweets when lastRunAt is set, skipping Gemini if none remain', async () => {
     // Set lastRunAt to far future so fixture tweets are all "old"
-    mockGetState.mockReturnValue({ lastRunAt: '2030-01-01T00:00:00.000Z', lastBriefText: 'prev' });
+    mockGetState.mockReturnValue({ lastRunAt: '2030-01-01T00:00:00.000Z', recentBriefs: ['prev'], recentTweets: [] });
     fetchMock.mockResponses(
       [twitterResp(rawFixture), { status: 200 }],
       [twitterResp([]), { status: 200 }], [twitterResp([]), { status: 200 }],

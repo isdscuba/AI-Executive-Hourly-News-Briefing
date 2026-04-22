@@ -11,7 +11,7 @@ const { stripAllBatches } = require('../../src/transform');
 const { getState, saveState } = require('../../src/state');
 const { generateBrief } = require('../../src/gemini');
 const { sendTelegram } = require('../../src/telegram');
-const { runBriefingPipeline, filterNewTweets } = require('../../src/briefing');
+const { runBriefingPipeline, filterNewTweets, dedupeAgainstRecentTweets } = require('../../src/briefing');
 
 const MOCK_RAW = {
   tweets1: [{ text: 'T1', createdAt: 'Thu Apr 02 18:00:00 +0000 2026', author: { userName: 'u1' } }],
@@ -28,10 +28,10 @@ const MOCK_STRIPPED = {
 const MOCK_BRIEF = '🚨 URGENT DEVELOPMENTS:\n🚨 Test item\n\n📈 MARKETS\nMarket item';
 const MOCK_PREV_BRIEF = 'Previous hour brief text';
 
-function setupHappyPath({ lastRunAt = null, lastBriefText = null } = {}) {
+function setupHappyPath({ lastRunAt = null, recentBriefs = [], recentTweets = [] } = {}) {
   fetchAllTweets.mockResolvedValue(MOCK_RAW);
   stripAllBatches.mockReturnValue(MOCK_STRIPPED);
-  getState.mockReturnValue({ lastRunAt, lastBriefText });
+  getState.mockReturnValue({ lastRunAt, recentBriefs, recentTweets });
   generateBrief.mockResolvedValue(MOCK_BRIEF);
   sendTelegram.mockResolvedValue({ ok: true, result: { message_id: 42 } });
   saveState.mockImplementation(() => {});
@@ -66,6 +66,44 @@ describe('filterNewTweets', () => {
   });
 });
 
+describe('dedupeAgainstRecentTweets', () => {
+  const batches = {
+    tweets1: [{ text: 'seen before', author: 'u1' }, { text: 'brand new', author: 'u2' }],
+    tweets2: [], tweets3: [], tweets4: [], tweets5: [],
+  };
+
+  const recentTweets = [
+    { tweets1: [{ text: 'seen before', author: 'u1' }], tweets2: [], tweets3: [], tweets4: [], tweets5: [] },
+  ];
+
+  it('returns all tweets when recentTweets is empty', () => {
+    expect(dedupeAgainstRecentTweets(batches, []).tweets1).toHaveLength(2);
+  });
+
+  it('filters out tweets whose text was seen in a recent run', () => {
+    const result = dedupeAgainstRecentTweets(batches, recentTweets);
+    expect(result.tweets1).toHaveLength(1);
+    expect(result.tweets1[0].text).toBe('brand new');
+  });
+
+  it('dedupes across multiple recent tweet sets', () => {
+    const recent = [
+      { tweets1: [{ text: 'seen before', author: 'u1' }], tweets2: [], tweets3: [], tweets4: [], tweets5: [] },
+      { tweets1: [], tweets2: [{ text: 'brand new', author: 'u2' }], tweets3: [], tweets4: [], tweets5: [] },
+    ];
+    const result = dedupeAgainstRecentTweets(batches, recent);
+    expect(result.tweets1).toHaveLength(0);
+  });
+
+  it('preserves tweets not seen in any recent run', () => {
+    const result = dedupeAgainstRecentTweets(
+      { tweets1: [{ text: 'truly new' }], tweets2: [], tweets3: [], tweets4: [], tweets5: [] },
+      recentTweets
+    );
+    expect(result.tweets1).toHaveLength(1);
+  });
+});
+
 describe('runBriefingPipeline — happy path', () => {
   beforeEach(() => setupHappyPath());
 
@@ -73,7 +111,7 @@ describe('runBriefingPipeline — happy path', () => {
     const order = [];
     fetchAllTweets.mockImplementation(async () => { order.push('fetch'); return MOCK_RAW; });
     stripAllBatches.mockImplementation(() => { order.push('strip'); return MOCK_STRIPPED; });
-    getState.mockImplementation(() => { order.push('getState'); return { lastRunAt: null, lastBriefText: null }; });
+    getState.mockImplementation(() => { order.push('getState'); return { lastRunAt: null, recentBriefs: [], recentTweets: [] }; });
     generateBrief.mockImplementation(async () => { order.push('gemini'); return MOCK_BRIEF; });
     sendTelegram.mockImplementation(async () => { order.push('telegram'); return { ok: true }; });
     saveState.mockImplementation(() => { order.push('save'); });
@@ -82,21 +120,21 @@ describe('runBriefingPipeline — happy path', () => {
     expect(order).toEqual(['fetch', 'strip', 'getState', 'gemini', 'telegram', 'save']);
   });
 
-  it('passes lastBriefText from state to generateBrief', async () => {
-    setupHappyPath({ lastRunAt: null, lastBriefText: MOCK_PREV_BRIEF });
+  it('passes recentBriefs array from state to generateBrief', async () => {
+    setupHappyPath({ lastRunAt: null, recentBriefs: [MOCK_PREV_BRIEF], recentTweets: [] });
     await runBriefingPipeline();
-    expect(generateBrief).toHaveBeenCalledWith(expect.any(Object), MOCK_PREV_BRIEF);
+    expect(generateBrief).toHaveBeenCalledWith(expect.any(Object), [MOCK_PREV_BRIEF]);
   });
 
-  it('passes null lastBriefText on first run', async () => {
-    setupHappyPath({ lastRunAt: null, lastBriefText: null });
+  it('passes empty recentBriefs on first run', async () => {
+    setupHappyPath({ lastRunAt: null, recentBriefs: [], recentTweets: [] });
     await runBriefingPipeline();
-    expect(generateBrief).toHaveBeenCalledWith(expect.any(Object), null);
+    expect(generateBrief).toHaveBeenCalledWith(expect.any(Object), []);
   });
 
-  it('calls saveState with the generated brief text', async () => {
+  it('calls saveState with the generated brief text and tweet batches', async () => {
     await runBriefingPipeline();
-    expect(saveState).toHaveBeenCalledWith(MOCK_BRIEF);
+    expect(saveState).toHaveBeenCalledWith(MOCK_BRIEF, expect.any(Object));
   });
 });
 
@@ -105,7 +143,7 @@ describe('runBriefingPipeline — tweet filtering', () => {
     fetchAllTweets.mockResolvedValue(MOCK_RAW);
     stripAllBatches.mockReturnValue(MOCK_STRIPPED);
     // last run AFTER all mock tweet timestamps
-    getState.mockReturnValue({ lastRunAt: '2026-04-02T19:00:00.000Z', lastBriefText: MOCK_PREV_BRIEF });
+    getState.mockReturnValue({ lastRunAt: '2026-04-02T19:00:00.000Z', recentBriefs: [MOCK_PREV_BRIEF], recentTweets: [] });
     generateBrief.mockResolvedValue(MOCK_BRIEF);
     sendTelegram.mockResolvedValue({ ok: true });
     saveState.mockImplementation(() => {});
@@ -121,7 +159,7 @@ describe('runBriefingPipeline — empty tweets guard', () => {
     const empty = { tweets1: [], tweets2: [], tweets3: [], tweets4: [], tweets5: [] };
     fetchAllTweets.mockResolvedValue(empty);
     stripAllBatches.mockReturnValue(empty);
-    getState.mockReturnValue({ lastRunAt: null, lastBriefText: null });
+    getState.mockReturnValue({ lastRunAt: null, recentBriefs: [], recentTweets: [] });
     generateBrief.mockResolvedValue(MOCK_BRIEF);
     sendTelegram.mockResolvedValue({ ok: true });
     saveState.mockImplementation(() => {});
@@ -161,7 +199,7 @@ describe('runBriefingPipeline — resilience', () => {
   it('still saves state after Telegram failure', async () => {
     sendTelegram.mockRejectedValue(new Error('429'));
     await runBriefingPipeline();
-    expect(saveState).toHaveBeenCalledWith(MOCK_BRIEF);
+    expect(saveState).toHaveBeenCalledWith(MOCK_BRIEF, expect.any(Object));
   });
 
   it('does not throw when Telegram fails', async () => {

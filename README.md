@@ -36,7 +36,7 @@ Keep batches balanced — the service waits for all 5 to finish before generatin
 - **AI summarization**: Gemini 2.5 Flash-Lite (`thinkingBudget=0` — fast, no extended reasoning)
 - **Delivery**: Telegram Bot API
 - **Scheduler**: `node-cron` running on the local machine
-- **Dedup**: Last 2 briefs stored in `data/briefings.json` — prevents re-reporting the same stories
+- **Dedup**: Last 3 briefs + last 3 tweet sets stored in `data/state.json` — prevents re-reporting stories and re-processing identical tweets across runs
 
 ## Setup
 
@@ -138,10 +138,11 @@ launchctl load ~/Library/LaunchAgents/com.exec-briefing.plist
 node-cron (schedule check)
   → 5x twitterapi.io requests (parallel, last 1hr window)
   → strip to {text, createdAt, author}  ←  ~95% token reduction
-  → load data/briefings.json (last 2 briefs, for dedup)
-  → Gemini 2.5 Flash-Lite
+  → load data/state.json (last 3 briefs + tweet sets, for dedup)
+  → filter: timestamp filter → tweet-text dedup against last 3 runs
+  → Gemini 2.5 Flash-Lite (story exclusion list: last 3 briefs)
   → Telegram sendMessage
-  → save to data/briefings.json (keep last 2)
+  → save to data/state.json (rolling history, max 3 entries each)
 ```
 
 **Cost**: ~$0.48/month at current Gemini pricing vs ~$53/month for equivalent cloud automation.
