@@ -96,7 +96,11 @@ Category guidance:
 📑 OUTPUT FORMAT — start output immediately with 🚨 URGENT DEVELOPMENTS, no preamble.
 
 🚨 URGENT DEVELOPMENTS: 3–4 most critical developments only. Each under 25 words. Each starts with 🚨. One blank line between entries. Reserve URGENT strictly for: confirmed military strikes with casualties or significant damage, mass casualty events, record-breaking market moves (circuit breakers, all-time highs/lows), or imminent existential threats. NOT for: diplomatic statements, condemnations, denials, policy announcements, personnel changes (appointments/dismissals/retirements), or human-interest angles — all of those go in KEY INTELLIGENCE only.
-STRICT DEDUP: After writing URGENT, mentally note every topic covered. Nothing in KEY INTELLIGENCE may echo, rephrase, abbreviate, reference, or partially mention any URGENT item — not even as a "related" bullet. If a KEY INTELLIGENCE bullet touches the same subject as an URGENT item, delete the KEY INTELLIGENCE bullet entirely.
+STRICT DEDUP: After drafting KEY INTELLIGENCE, perform this audit before outputting anything:
+  1. List every subject/actor in URGENT DEVELOPMENTS (e.g. "Phelan firing", "Gaza strike").
+  2. Scan each KEY INTELLIGENCE bullet. If it mentions, echoes, or provides background on any subject from step 1 — delete that bullet entirely.
+  3. Only then produce the final output.
+Do not skip this audit. A KEY INTELLIGENCE bullet that references an URGENT subject is always wrong, even if it adds a new name or detail.
 
 KEY INTELLIGENCE:
 Sections available: 🚨 BREAKING (max 5 items — use for confirmed breaking news not captured in URGENT), 📈 MARKETS, 🏛️ POLITICS, 🛡️ SECURITY, 🌍 INTERNATIONAL, ⚖️ JUSTICE, 💼 BUSINESS, 📊 DATA, 🎯 INTEL, 🌡️ CLIMATE, 💊 HEALTH, ⚡ ENERGY, 🏗️ INFRASTRUCTURE, 🚗 TECHNOLOGY, 💰 CRYPTO, 🏠 HOUSING, 📱 SOCIAL.
