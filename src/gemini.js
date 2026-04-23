@@ -90,8 +90,8 @@ Only geopolitical, economic, security, or policy-relevant content proceeds to th
 Category guidance:
 - SECURITY: military operations, strikes, weapons, intelligence assessments, troop movements, naval activity, militant group actions, cyberattacks and infrastructure attacks by state/military actors (including data center attacks)
 - INTERNATIONAL: diplomacy, alliances, bilateral agreements, multilateral negotiations, sanctions
-- TECHNOLOGY: civilian tech only — commercial AI products, software releases, consumer devices. Any attack on infrastructure → SECURITY. Any military hardware → SECURITY. When in doubt, use SECURITY over TECHNOLOGY.
-- ENERGY: oil/gas prices, pipelines, production, refining. Energy weaponisation/blockade → SECURITY or INTERNATIONAL.
+- TECHNOLOGY: civilian tech only — commercial AI products, software releases, consumer devices. Any cyberattack, hacking, or infrastructure attack → SECURITY. Any military hardware → SECURITY. When in doubt, use SECURITY over TECHNOLOGY.
+- ENERGY: oil/gas prices, pipelines, production volumes, refining, power grids. NOT corporate earnings, cost pressures, or company margins — those go to 💼 BUSINESS. NOT nuclear/military weapons — those go to 🛡️ SECURITY. Energy weaponisation/blockade → SECURITY or INTERNATIONAL.
 
 📑 OUTPUT FORMAT — start output immediately with 🚨 URGENT DEVELOPMENTS, no preamble.
 
@@ -103,7 +103,7 @@ STRICT DEDUP: After drafting KEY INTELLIGENCE, perform this audit before outputt
 Do not skip this audit. A KEY INTELLIGENCE bullet that references an URGENT subject is always wrong, even if it adds a new name or detail.
 
 KEY INTELLIGENCE:
-Sections available: 🚨 BREAKING (max 5 items — use for confirmed breaking news not captured in URGENT), 📈 MARKETS, 🏛️ POLITICS, 🛡️ SECURITY, 🌍 INTERNATIONAL, ⚖️ JUSTICE, 💼 BUSINESS, 📊 DATA, 🎯 INTEL, 🌡️ CLIMATE, 💊 HEALTH, ⚡ ENERGY, 🏗️ INFRASTRUCTURE, 🚗 TECHNOLOGY, 💰 CRYPTO, 🏠 HOUSING, 📱 SOCIAL.
+Sections available: 🚨 BREAKING (max 5 items — confirmed breaking news ONLY; must NOT restate, echo, or mention any story already listed in 🚨 URGENT DEVELOPMENTS above — if a story is in URGENT, it must not appear in BREAKING under any framing), 📈 MARKETS, 🏛️ POLITICS, 🛡️ SECURITY, 🌍 INTERNATIONAL, ⚖️ JUSTICE, 💼 BUSINESS, 📊 DATA, 🎯 INTEL, 🌡️ CLIMATE, 💊 HEALTH, ⚡ ENERGY, 🏗️ INFRASTRUCTURE, 🚗 TECHNOLOGY, 💰 CRYPTO, 🏠 HOUSING, 📱 SOCIAL.
 Rules: (1) Each story in exactly one section. (2) Only output a section header if it has content beneath it — no empty or placeholder sections. (3) Section emojis appear on headers only, never on individual bullet lines.
 
 UNCATEGORIZED INTEL: Only if items genuinely fit no category above. Omit entirely if empty. Do not repeat KEY INTELLIGENCE items here.
