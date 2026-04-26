@@ -100,6 +100,12 @@ async function runBriefingPipeline({ isOpeningBrief = false } = {}) {
   const rawTotal = rawCounts.reduce((a, b) => a + b, 0);
   log(`Batch 1: ${rawCounts[0]} | Batch 2: ${rawCounts[1]} | Batch 3: ${rawCounts[2]} | Batch 4: ${rawCounts[3]} | Batch 5: ${rawCounts[4]} | Total: ${rawTotal} tweets`);
 
+  if (rawTotal === 0) {
+    await sendTelegram(`⚠️ exec-news: Twitter API returned 0 tweets across all batches at ${new Date().toISOString()} — pipeline skipped`).catch(e => log(`Health alert failed: ${e.message}`));
+    log('Zero raw tweets from API — skipping');
+    return;
+  }
+
   // Step 2: Strip to minimal fields (~95% token reduction)
   const rawBytes = Buffer.byteLength(JSON.stringify(rawBatches), 'utf8');
   const stripped = stripAllBatches(rawBatches);
