@@ -53,7 +53,11 @@ async function fetchBatch(accounts, sinceTimestamp) {
 
     const json = await response.json();
     // API returns { tweets: [...] } at top level (not nested under data)
-    return Array.isArray(json?.tweets) ? json.tweets : [];
+    if (!Array.isArray(json?.tweets)) {
+      console.error(`[twitter] Unexpected response (no tweets array):`, JSON.stringify(json).slice(0, 400));
+      return [];
+    }
+    return json.tweets;
   } catch (err) {
     clearTimeout(timeoutId);
     if (err.name === 'AbortError') {

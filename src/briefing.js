@@ -92,9 +92,28 @@ async function runBriefingPipeline({ isOpeningBrief = false } = {}) {
   // the Twitter API query and the client-side tweet filter.
   const midnightEtUtc = isOpeningBrief ? getMidnightEtUtc() : null;
 
+  // Load state first — needed to compute the correct fetch window (catch-up after crash)
+  const { lastRunAt, recentBriefs, recentTweets } = getState();
+
+  // Compute the fetch window. Opening briefs always use midnight ET.
+  // Normal runs use lastRunAt when it's 1–4 hours old (crash catch-up), otherwise 1 hour ago.
+  // This ensures the API query window matches the state filter so no tweets are missed.
+  let fetchSince = midnightEtUtc; // null → 1 hour ago default inside fetchAllTweets
+  if (!isOpeningBrief && lastRunAt) {
+    const lastRunMs = new Date(lastRunAt).getTime();
+    const oneHourAgo = Date.now() - 3_600_000;
+    const fourHoursAgo = Date.now() - 14_400_000;
+    if (lastRunMs < oneHourAgo && lastRunMs > fourHoursAgo) {
+      fetchSince = lastRunAt; // widen fetch window to cover the gap after a crash
+    }
+  }
+
   // Step 1: Fetch tweets
-  log(`Fetching tweets (5 batches in parallel, since: ${midnightEtUtc || '1 hour ago'})...`);
-  const rawBatches = await fetchAllTweets(midnightEtUtc);
+  const sinceLabel = fetchSince
+    ? (fetchSince === midnightEtUtc ? 'midnight ET' : `${Math.round((Date.now() - new Date(fetchSince).getTime()) / 60000)}m ago (catch-up)`)
+    : '1 hour ago';
+  log(`Fetching tweets (5 batches in parallel, since: ${sinceLabel})...`);
+  const rawBatches = await fetchAllTweets(fetchSince);
 
   const rawCounts = [1, 2, 3, 4, 5].map(n => rawBatches[`tweets${n}`].length);
   const rawTotal = rawCounts.reduce((a, b) => a + b, 0);
@@ -112,9 +131,6 @@ async function runBriefingPipeline({ isOpeningBrief = false } = {}) {
   const strippedBytes = Buffer.byteLength(JSON.stringify(stripped), 'utf8');
   const reductionPct = Math.round((1 - strippedBytes / rawBytes) * 100);
   log(`Payload: ${Math.round(rawBytes / 1024)}KB → ${Math.round(strippedBytes / 1024)}KB after strip (~${reductionPct}% reduction)`);
-
-  // Step 3: Load previous run state
-  const { lastRunAt, recentBriefs, recentTweets } = getState();
 
   // Step 4: Filter to new tweets only
   // Opening brief: filter since midnight ET (ignore lastRunAt — we want all overnight news)
