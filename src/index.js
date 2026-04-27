@@ -8,7 +8,8 @@ const { runBriefingPipeline } = require('./briefing');
 const { sendTelegram } = require('./telegram');
 const { getState } = require('./state');
 
-const CRASH_LOG = path.join(__dirname, '../data/crash.log');
+// On the LOCAL drive so crash reasons survive an external drive unmount
+const CRASH_LOG = path.join(process.env.HOME || '/tmp', 'Library/Logs/exec-briefing/crash.log');
 
 function log(msg) {
   console.log(`[${new Date().toISOString()}] ${msg}`);
@@ -26,6 +27,17 @@ process.on('unhandledRejection', reason => {
   try { fs.appendFileSync(CRASH_LOG, msg); } catch (_) {}
   console.error(msg);
   process.exit(1);
+});
+// Log clean kills so we can distinguish OS signals from crashes
+process.on('SIGTERM', () => {
+  const msg = `[${new Date().toISOString()}] Received SIGTERM — exiting\n`;
+  try { fs.appendFileSync(CRASH_LOG, msg); } catch (_) {}
+  process.exit(0);
+});
+process.on('SIGHUP', () => {
+  const msg = `[${new Date().toISOString()}] Received SIGHUP — exiting\n`;
+  try { fs.appendFileSync(CRASH_LOG, msg); } catch (_) {}
+  process.exit(0);
 });
 
 /**
