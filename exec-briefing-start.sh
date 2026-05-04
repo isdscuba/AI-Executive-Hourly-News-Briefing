@@ -1,7 +1,7 @@
 #!/bin/bash
 # Waits for the external drive to mount, then starts the exec-briefing node daemon.
 # Install to: ~/Library/Scripts/exec-briefing-start.sh (chmod +x)
-WORK_DIR="/Volumes/home/Drive/APPS/executive-news"
+WORK_DIR="$HOME/projects/executive-news"
 NODE="/opt/homebrew/opt/node@22/bin/node"
 SCRIPT="$WORK_DIR/src/index.js"
 MAX_WAIT=120
