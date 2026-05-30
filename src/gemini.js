@@ -45,13 +45,26 @@ async function generateBrief(strippedBatches, recentBriefs) {
 function buildDeduplicationSection(recentBriefs) {
   if (!recentBriefs || recentBriefs.length === 0) return '';
 
-  const briefBlocks = recentBriefs
-    .map((brief, i) =>
-      `<PREVIOUS_BRIEF_${i + 1}_DO_NOT_OUTPUT>\n${brief}\n</PREVIOUS_BRIEF_${i + 1}_DO_NOT_OUTPUT>`)
-    .join('\n\n');
+  // Extract individual content lines — strip section headers and structural lines,
+  // keep only the actual story bullets so Gemini gets a clean per-story comparison target.
+  const SECTION_HEADER_RE = /^[🚨📈🏛️🛡️🌍⚖️💼📊🎯🌡️💊⚡🏗️🚗💰🏠📱]\s/u;
+  const bullets = recentBriefs.flatMap(brief =>
+    brief.split('\n')
+      .map(l => l.trim())
+      .filter(l =>
+        l.length > 0 &&
+        !l.startsWith('🚨 URGENT') &&
+        !l.startsWith('KEY INTELLIGENCE') &&
+        !SECTION_HEADER_RE.test(l)
+      )
+  );
 
-  return `STORY EXCLUSION LIST — these stories were already reported in the last ${recentBriefs.length} brief${recentBriefs.length > 1 ? 's' : ''}. Do NOT repeat a story unless the new tweet adds a materially new data point: a new specific statistic (e.g. "70% of steel production"), a new named casualty count, a new location, a confirmed escalation, or a named official statement not present in any previous brief. If the new tweet is essentially the same fact restated, skip it. If it contains genuinely new information, include it as a fresh item:
-${briefBlocks}
+  if (bullets.length === 0) return '';
+
+  const bulletList = bullets.map(b => `- ${b}`).join('\n');
+
+  return `STORY EXCLUSION — the following stories were already reported in the last ${recentBriefs.length} brief${recentBriefs.length > 1 ? 's' : ''}. Do NOT include any story whose actor + core fact matches an item below, even if the source tweet uses different wording. Only include if the new tweet adds a materially new data point: a new named casualty count, a new confirmed statistic, a new location, or a confirmed escalation. Restatements and updates-without-new-facts must be skipped entirely.
+${bulletList}
 
 `;
 }
