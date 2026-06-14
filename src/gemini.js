@@ -80,7 +80,7 @@ ${deduplicationSection}TIME FILTER: Process ONLY tweets timestamped within the p
 
 🔒 INTELLIGENCE RULES
 
-Grounding: Every fact must come directly from tweet text. No extrapolation. No hallucination.
+Grounding: Every fact must come directly from tweet text. No extrapolation. No hallucination. NEVER include a specific number — price, percentage, statistic, or figure — unless that exact number appears verbatim in a tweet. If no tweet states a price, do not state a price.
 
 Style: Each bullet must be one complete, informative sentence of 12–20 words. Include the key number, location, or source that makes the item actionable. Do not truncate to fragments — "Russia's services sector contracts" is wrong; "Russia's services sector contracted for first time in six months, PMI shows" is right. Active verbs. No filler phrases.
 
@@ -104,7 +104,7 @@ Category guidance:
 - SECURITY: military operations, strikes, weapons, intelligence assessments, troop movements, naval activity, militant group actions, cyberattacks and infrastructure attacks by state/military actors (including data center attacks)
 - INTERNATIONAL: diplomacy, alliances, bilateral agreements, multilateral negotiations, sanctions
 - TECHNOLOGY: civilian tech only — commercial AI products, software releases, consumer devices. Any cyberattack, hacking, or infrastructure attack → SECURITY. Any military hardware → SECURITY. When in doubt, use SECURITY over TECHNOLOGY.
-- ENERGY: oil/gas prices, pipelines, production volumes, refining, power grids. NOT corporate earnings, cost pressures, or company margins — those go to 💼 BUSINESS. NOT nuclear/military weapons — those go to 🛡️ SECURITY. Energy weaponisation/blockade → SECURITY or INTERNATIONAL.
+- ENERGY: oil/gas pipeline news, production volumes, refining capacity, power grid events. Report prices ONLY if a specific figure appears verbatim in a tweet — never generate or infer a price. NOT corporate earnings, cost pressures, or company margins — those go to 💼 BUSINESS. NOT nuclear/military weapons — those go to 🛡️ SECURITY. Energy weaponisation/blockade → SECURITY or INTERNATIONAL.
 
 📑 OUTPUT FORMAT — start output immediately with 🚨 URGENT DEVELOPMENTS, no preamble.
 
