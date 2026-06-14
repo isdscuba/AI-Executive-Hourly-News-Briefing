@@ -47,7 +47,10 @@ function buildDeduplicationSection(recentBriefs) {
 
   // Extract individual content lines — strip section headers and structural lines,
   // keep only the actual story bullets so Gemini gets a clean per-story comparison target.
+  // Also strip any bullet that contains a specific commodity price (e.g. "$87.33 per barrel")
+  // — those are hallucinated values we never want Gemini to see as contextual anchors.
   const SECTION_HEADER_RE = /^[🚨📈🏛️🛡️🌍⚖️💼📊🎯🌡️💊⚡🏗️🚗💰🏠📱]\s/u;
+  const COMMODITY_PRICE_RE = /\$\d+(?:\.\d+)?\s+per\s+barrel|\bWTI\b.*\$|\bBrent\b.*\$|\$.*\bbarrel\b/i;
   const bullets = recentBriefs.flatMap(brief =>
     brief.split('\n')
       .map(l => l.trim())
@@ -55,7 +58,8 @@ function buildDeduplicationSection(recentBriefs) {
         l.length > 0 &&
         !l.startsWith('🚨 URGENT') &&
         !l.startsWith('KEY INTELLIGENCE') &&
-        !SECTION_HEADER_RE.test(l)
+        !SECTION_HEADER_RE.test(l) &&
+        !COMMODITY_PRICE_RE.test(l)
       )
   );
 
@@ -80,7 +84,7 @@ ${deduplicationSection}TIME FILTER: Process ONLY tweets timestamped within the p
 
 🔒 INTELLIGENCE RULES
 
-Grounding: Every fact must come directly from tweet text. No extrapolation. No hallucination. NEVER include a specific number — price, percentage, statistic, or figure — unless that exact number appears verbatim in a tweet. If no tweet states a price, do not state a price.
+Grounding: Every fact must come directly from tweet text. No extrapolation. No hallucination. NEVER include a specific number — price, percentage, statistic, or figure — unless that exact number appears verbatim in a tweet. If no tweet states a price, do not state a price. SPECIFICALLY FORBIDDEN: oil or commodity settlement prices ("Brent Crude settled at $X.XX per barrel", "WTI futures at $X.XX") — these are synthetic market summaries not present in the tweet dataset and must never appear.
 
 Style: Each bullet must be one complete, informative sentence of 12–20 words. Include the key number, location, or source that makes the item actionable. Do not truncate to fragments — "Russia's services sector contracts" is wrong; "Russia's services sector contracted for first time in six months, PMI shows" is right. Active verbs. No filler phrases.
 
