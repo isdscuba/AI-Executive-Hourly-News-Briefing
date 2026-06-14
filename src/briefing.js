@@ -152,18 +152,17 @@ async function runBriefingPipeline({ isOpeningBrief = false } = {}) {
   }
 
   // Step 6: Generate brief
-  // Pass recentBriefs array for story-level dedup (covers last 3 hours of coverage)
   const newBytes = Buffer.byteLength(JSON.stringify(newTweets), 'utf8');
-  log(`Sending ${Math.round(newBytes / 1024)}KB to Gemini (${newTotal} tweets, story dedup: ${recentBriefs.length} prior briefs | tweet dedup: ${recentTweets.length} prior sets)...`);
+  log(`Sending ${Math.round(newBytes / 1024)}KB to Gemini (${newTotal} tweets, tweet dedup: ${recentTweets.length} prior sets)...`);
 
   let briefText;
   try {
-    briefText = await generateBrief(newTweets, recentBriefs);
+    briefText = await generateBrief(newTweets);
   } catch (err) {
     log(`Gemini failed (attempt 1): ${err.message}. Retrying in 10s...`);
     await sleep(10_000);
     try {
-      briefText = await generateBrief(newTweets, recentBriefs);
+      briefText = await generateBrief(newTweets);
     } catch (retryErr) {
       log(`Gemini failed (attempt 2): ${retryErr.message}. Skipping run.`);
       return;
