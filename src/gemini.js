@@ -25,22 +25,31 @@ const STOPWORDS = new Set([
 /**
  * Strips bullets that either have no [Tx] citation or whose cited tweet(s)
  * share fewer than 2 content words with the bullet text.
- * Returns the brief with citation tags removed.
+ * Returns the brief with all citation tags removed.
  */
 function verifyCitations(briefText, allTweets) {
   const CITE_RE = /\s*\[T\d+(?:,\s*T\d+)*\]/g;
 
+  let inUrgentSection = false;
   const lines = briefText.split('\n');
   const cleaned = lines.map(line => {
     const trimmed = line.trim();
 
-    // URGENT items (🚨 followed by content, not a section header)
-    const isUrgentItem = /^🚨/.test(trimmed)
+    // Track which section we're in so plain-text URGENT items are detected
+    if (trimmed.startsWith('🚨 URGENT DEVELOPMENTS')) { inUrgentSection = true; return line; }
+    if (trimmed.startsWith('KEY INTELLIGENCE'))        { inUrgentSection = false; return line; }
+
+    // Classify content lines that need citation verification
+    // — URGENT section: non-empty lines that aren't the header itself
+    // — 🚨-prefixed items (old-style urgent bullets)
+    // — * bullets (KEY INTELLIGENCE items)
+    const isUrgentItem   = inUrgentSection && trimmed.length > 20;
+    const isUrgentBullet = /^🚨/.test(trimmed)
       && !trimmed.startsWith('🚨 URGENT DEVELOPMENTS')
       && !trimmed.startsWith('🚨 BREAKING');
-    const isKeyBullet = trimmed.startsWith('*');
+    const isKeyBullet    = trimmed.startsWith('*');
 
-    if (!isUrgentItem && !isKeyBullet) return line; // keep headers, blanks, etc.
+    if (!isUrgentItem && !isUrgentBullet && !isKeyBullet) return line;
 
     // Must have at least one [Tx] citation
     if (!/\[T\d+/.test(trimmed)) return null;
@@ -70,9 +79,11 @@ function verifyCitations(briefText, allTweets) {
     return verified ? line.replace(CITE_RE, '') : null;
   });
 
+  // Global safety net: strip any [Tx] tags that weren't caught per-line
   return cleaned
     .filter(l => l !== null)
     .join('\n')
+    .replace(CITE_RE, '')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
