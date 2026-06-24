@@ -96,7 +96,7 @@ function verifyCitations(briefText, allTweets) {
  * @param {Object} strippedBatches - { tweets1..5 }
  * @returns {string} Verified brief text
  */
-async function generateBrief(strippedBatches) {
+async function generateBrief(strippedBatches, { modelOverride } = {}) {
   const allTweets = [
     ...strippedBatches.tweets1,
     ...strippedBatches.tweets2,
@@ -108,7 +108,7 @@ async function generateBrief(strippedBatches) {
   const prompt = buildPrompt({ allTweets, currentUtcDatetime: new Date().toISOString() });
 
   const model = getGenAI().getGenerativeModel({
-    model: config.gemini.model,
+    model: modelOverride || config.gemini.model,
     generationConfig: {
       thinkingConfig: { thinkingBudget: 0 },
       responseModalities: ['text'],

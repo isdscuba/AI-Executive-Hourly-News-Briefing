@@ -155,17 +155,31 @@ async function runBriefingPipeline({ isOpeningBrief = false } = {}) {
   const newBytes = Buffer.byteLength(JSON.stringify(newTweets), 'utf8');
   log(`Sending ${Math.round(newBytes / 1024)}KB to Gemini (${newTotal} tweets, tweet dedup: ${recentTweets.length} prior sets)...`);
 
+  const FALLBACK_MODEL = 'gemini-2.5-flash';
+  const attempts = [
+    { delay: 0,      model: undefined },
+    { delay: 10_000, model: undefined },
+    { delay: 60_000, model: FALLBACK_MODEL },
+  ];
+
   let briefText;
-  try {
-    briefText = await generateBrief(newTweets);
-  } catch (err) {
-    log(`Gemini failed (attempt 1): ${err.message}. Retrying in 10s...`);
-    await sleep(10_000);
+  for (let i = 0; i < attempts.length; i++) {
+    const { delay, model: modelOverride } = attempts[i];
+    if (delay > 0) await sleep(delay);
     try {
-      briefText = await generateBrief(newTweets);
-    } catch (retryErr) {
-      log(`Gemini failed (attempt 2): ${retryErr.message}. Skipping run.`);
-      return;
+      briefText = await generateBrief(newTweets, { modelOverride });
+      if (modelOverride) log(`Used fallback model: ${modelOverride}`);
+      break;
+    } catch (err) {
+      const attemptNum = i + 1;
+      if (attemptNum < attempts.length) {
+        const next = attempts[attemptNum];
+        const label = next.model ? `fallback model ${next.model}` : `retry`;
+        log(`Gemini failed (attempt ${attemptNum}): ${err.message}. Trying ${label} in ${next.delay / 1000}s...`);
+      } else {
+        log(`Gemini failed (attempt ${attemptNum}): ${err.message}. Skipping run.`);
+        return;
+      }
     }
   }
   log(`Brief generated: ${briefText.length} chars`);
