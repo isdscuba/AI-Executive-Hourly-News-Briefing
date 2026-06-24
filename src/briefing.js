@@ -155,11 +155,11 @@ async function runBriefingPipeline({ isOpeningBrief = false } = {}) {
   const newBytes = Buffer.byteLength(JSON.stringify(newTweets), 'utf8');
   log(`Sending ${Math.round(newBytes / 1024)}KB to Gemini (${newTotal} tweets, tweet dedup: ${recentTweets.length} prior sets)...`);
 
-  const FALLBACK_MODEL = 'gemini-2.5-flash';
   const attempts = [
     { delay: 0,      model: undefined },
     { delay: 10_000, model: undefined },
-    { delay: 60_000, model: FALLBACK_MODEL },
+    { delay: 60_000, model: 'gemini-2.5-flash' },
+    { delay: 30_000, model: 'gemini-2.0-flash' },
   ];
 
   let briefText;
