@@ -107,13 +107,11 @@ async function generateBrief(strippedBatches, { modelOverride } = {}) {
 
   const prompt = buildPrompt({ allTweets, currentUtcDatetime: new Date().toISOString() });
 
-  const model = getGenAI().getGenerativeModel({
-    model: modelOverride || config.gemini.model,
-    generationConfig: {
-      thinkingConfig: { thinkingBudget: 0 },
-      responseModalities: ['text'],
-    },
-  });
+  const resolvedModel = modelOverride || config.gemini.model;
+  const generationConfig = resolvedModel.startsWith('gemini-2.5')
+    ? { thinkingConfig: { thinkingBudget: 0 }, responseModalities: ['text'] }
+    : { responseModalities: ['text'] };
+  const model = getGenAI().getGenerativeModel({ model: resolvedModel, generationConfig });
 
   const result = await model.generateContent(prompt);
   return verifyCitations(result.response.text(), allTweets);

@@ -159,7 +159,7 @@ async function runBriefingPipeline({ isOpeningBrief = false } = {}) {
     { delay: 0,      model: undefined },
     { delay: 10_000, model: undefined },
     { delay: 60_000, model: 'gemini-2.5-flash' },
-    { delay: 30_000, model: 'gemini-2.0-flash' },
+    { delay: 30_000, model: 'gemini-1.5-flash-latest' },
   ];
 
   let briefText;
