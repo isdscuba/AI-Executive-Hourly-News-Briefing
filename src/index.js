@@ -41,55 +41,52 @@ process.on('SIGHUP', () => {
 });
 
 /**
- * Returns current ET hour (0–23) and whether it is a weekend day.
+ * Returns current ET hour (0–23).
  * Uses Intl.DateTimeFormat to handle DST automatically.
  */
 function getEtDateParts() {
   const now = new Date();
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: config.schedule.timezone,
-    weekday: 'short',
     hour: '2-digit',
     hour12: false,
   }).formatToParts(now);
 
   const hour = Number(parts.find(p => p.type === 'hour').value) % 24;
-  const weekday = parts.find(p => p.type === 'weekday').value; // 'Sat' | 'Sun' | ...
-  const isWeekend = weekday === 'Sat' || weekday === 'Sun';
-  return { hour, isWeekend };
+  return { hour };
 }
 
 /**
  * Returns true if the given ET hour is a scheduled run hour.
  * Mirrors the gate logic in the cron callback.
  */
-function isScheduledHour(etHour, isWeekend) {
-  const schedule = isWeekend ? config.schedule.weekend : config.schedule.weekday;
+function isScheduledHour(etHour) {
+  const schedule = config.schedule.daily;
   if (etHour < schedule.start || etHour > schedule.end) return false;
-  if (isWeekend && (etHour - schedule.start) % schedule.intervalHours !== 0) return false;
+  if ((etHour - schedule.start) % schedule.intervalHours !== 0) return false;
   return true;
 }
 
-// Runs every hour on the hour; internal logic gates on weekday vs weekend schedule.
+// Runs every hour on the hour; internal logic gates on the daily schedule.
 cron.schedule('0 * * * *', async () => {
-  const { hour: etHour, isWeekend } = getEtDateParts();
-  const schedule = isWeekend ? config.schedule.weekend : config.schedule.weekday;
+  const { hour: etHour } = getEtDateParts();
+  const schedule = config.schedule.daily;
 
   // Bounds check
   if (etHour < schedule.start || etHour > schedule.end) {
-    log(`Outside run window (ET hour: ${etHour}, ${isWeekend ? 'weekend' : 'weekday'}) — skipping`);
+    log(`Outside run window (ET hour: ${etHour}) — skipping`);
     return;
   }
 
-  // Weekend: only run on the 2-hour interval (7, 9, 11, ..., 23)
-  if (isWeekend && (etHour - schedule.start) % schedule.intervalHours !== 0) {
-    log(`Weekend off-interval (ET hour: ${etHour}) — skipping`);
+  // Only run on the interval (7, 9, 11, ..., 23)
+  if ((etHour - schedule.start) % schedule.intervalHours !== 0) {
+    log(`Off-interval (ET hour: ${etHour}) — skipping`);
     return;
   }
 
   const isOpeningBrief = etHour === schedule.openingHour;
 
-  log(`Running pipeline (ET hour: ${etHour}, ${isWeekend ? 'weekend' : 'weekday'}${isOpeningBrief ? ', OPENING BRIEF' : ''})`);
+  log(`Running pipeline (ET hour: ${etHour}${isOpeningBrief ? ', OPENING BRIEF' : ''})`);
 
   await runBriefingPipeline({ isOpeningBrief }).catch(err => {
     console.error(`[${new Date().toISOString()}] Unhandled pipeline error:`, err);
@@ -118,8 +115,8 @@ async function notifyStartup() {
  * Run the pipeline immediately to catch up.
  */
 async function catchUpIfMissedRun() {
-  const { hour: etHour, isWeekend } = getEtDateParts();
-  if (!isScheduledHour(etHour, isWeekend)) return;
+  const { hour: etHour } = getEtDateParts();
+  if (!isScheduledHour(etHour)) return;
 
   const { lastRunAt } = getState();
   const minutesSinceLast = lastRunAt
@@ -128,7 +125,7 @@ async function catchUpIfMissedRun() {
 
   if (minutesSinceLast <= 70) return; // ran recently enough, no catch-up needed
 
-  const schedule = isWeekend ? config.schedule.weekend : config.schedule.weekday;
+  const schedule = config.schedule.daily;
   const isOpeningBrief = etHour === schedule.openingHour;
   log(`Startup catch-up: missed ET hour ${etHour} (last run ${Math.round(minutesSinceLast)}m ago) — running now`);
   await runBriefingPipeline({ isOpeningBrief }).catch(err => {
@@ -137,8 +134,7 @@ async function catchUpIfMissedRun() {
 }
 
 log('Exec News Briefing daemon started');
-log(`Weekday: every hour ${config.schedule.weekday.start}:00–${config.schedule.weekday.end}:00 ET`);
-log(`Weekend: every ${config.schedule.weekend.intervalHours}h ${config.schedule.weekend.start}:00–${config.schedule.weekend.end}:00 ET`);
+log(`Every day: every ${config.schedule.daily.intervalHours}h ${config.schedule.daily.start}:00–${config.schedule.daily.end}:00 ET`);
 
 // Run startup tasks sequentially (alert first, then catch-up)
 notifyStartup().then(() => catchUpIfMissedRun()).catch(err => {

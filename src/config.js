@@ -30,10 +30,8 @@ const config = {
 
   schedule: {
     timezone: process.env.TIMEZONE || 'America/New_York',
-    // Weekday: every hour, 6 AM–11 PM ET (6 AM brief covers midnight→6 AM)
-    weekday: { start: 6, end: 23, openingHour: 6 },
-    // Weekend: every 2 hours, 7 AM–11 PM ET (7 AM brief covers midnight→7 AM)
-    weekend: { start: 7, end: 23, intervalHours: 2, openingHour: 7 },
+    // Every day: every 2 hours, 7 AM–11 PM ET (7 AM brief covers midnight→7 AM)
+    daily: { start: 7, end: 23, intervalHours: 2, openingHour: 7 },
   },
 };
 

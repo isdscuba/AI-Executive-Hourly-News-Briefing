@@ -117,10 +117,8 @@ Edit `src/config.js`:
 ```js
 schedule: {
   timezone: 'America/New_York',
-  // Weekdays: runs every hour between these times
-  weekday: { start: 6, end: 23, openingHour: 6 },
-  // Weekends: runs every 2 hours between these times
-  weekend: { start: 7, end: 23, intervalHours: 2, openingHour: 7 },
+  // Every day: runs every 2 hours between these times
+  daily: { start: 7, end: 23, intervalHours: 2, openingHour: 7 },
 },
 ```
 
