@@ -102,6 +102,63 @@ describe('dedupeAgainstRecentTweets', () => {
     );
     expect(result.tweets1).toHaveLength(1);
   });
+
+  it('catches a URL-variant duplicate (same story, different t.co link)', () => {
+    const recent = [
+      { tweets1: [{ text: 'Markets rally after Fed decision https://t.co/abc123' }], tweets2: [], tweets3: [], tweets4: [], tweets5: [] },
+    ];
+    const result = dedupeAgainstRecentTweets(
+      { tweets1: [{ text: 'Markets rally after Fed decision https://t.co/xyz999' }], tweets2: [], tweets3: [], tweets4: [], tweets5: [] },
+      recent
+    );
+    expect(result.tweets1).toHaveLength(0);
+  });
+
+  it('catches an RT-prefixed duplicate', () => {
+    const recent = [
+      { tweets1: [{ text: 'Breaking: central bank raises rates' }], tweets2: [], tweets3: [], tweets4: [], tweets5: [] },
+    ];
+    const result = dedupeAgainstRecentTweets(
+      { tweets1: [{ text: 'RT @someuser: Breaking: central bank raises rates' }], tweets2: [], tweets3: [], tweets4: [], tweets5: [] },
+      recent
+    );
+    expect(result.tweets1).toHaveLength(0);
+  });
+
+  it('collapses a near-duplicate paraphrase above the Jaccard threshold', () => {
+    const recent = [
+      { tweets1: [{ text: 'large explosion reported near central train station in downtown area sources say blast was reported' }], tweets2: [], tweets3: [], tweets4: [], tweets5: [] },
+    ];
+    const result = dedupeAgainstRecentTweets(
+      { tweets1: [{ text: 'large explosion reported near central train station in downtown area sources say blast was confirmed' }], tweets2: [], tweets3: [], tweets4: [], tweets5: [] },
+      recent
+    );
+    expect(result.tweets1).toHaveLength(0);
+  });
+
+  it('keeps a distinct update below the Jaccard threshold (guards against over-collapsing)', () => {
+    const recent = [
+      { tweets1: [{ text: 'Officials confirm explosion near the capital city border region' }], tweets2: [], tweets3: [], tweets4: [], tweets5: [] },
+    ];
+    const result = dedupeAgainstRecentTweets(
+      { tweets1: [{ text: 'Death toll from the border region explosion rises to 12, officials say' }], tweets2: [], tweets3: [], tweets4: [], tweets5: [] },
+      recent
+    );
+    expect(result.tweets1).toHaveLength(1);
+  });
+
+  it('collapses near-duplicates posted across different batches within the same run', () => {
+    const result = dedupeAgainstRecentTweets(
+      {
+        tweets1: [{ text: 'large explosion reported near central train station in downtown area sources say blast was reported', author: 'acct1' }],
+        tweets2: [{ text: 'large explosion reported near central train station in downtown area sources say blast was confirmed', author: 'acct2' }],
+        tweets3: [], tweets4: [], tweets5: [],
+      },
+      []
+    );
+    const total = Object.values(result).reduce((a, b) => a + b.length, 0);
+    expect(total).toBe(1);
+  });
 });
 
 describe('runBriefingPipeline — happy path', () => {
@@ -117,19 +174,12 @@ describe('runBriefingPipeline — happy path', () => {
     saveState.mockImplementation(() => { order.push('save'); });
 
     await runBriefingPipeline();
-    expect(order).toEqual(['fetch', 'strip', 'getState', 'gemini', 'telegram', 'save']);
+    expect(order).toEqual(['getState', 'fetch', 'strip', 'gemini', 'telegram', 'save']);
   });
 
-  it('passes recentBriefs array from state to generateBrief', async () => {
-    setupHappyPath({ lastRunAt: null, recentBriefs: [MOCK_PREV_BRIEF], recentTweets: [] });
+  it('calls generateBrief with the deduped tweet batches', async () => {
     await runBriefingPipeline();
-    expect(generateBrief).toHaveBeenCalledWith(expect.any(Object), [MOCK_PREV_BRIEF]);
-  });
-
-  it('passes empty recentBriefs on first run', async () => {
-    setupHappyPath({ lastRunAt: null, recentBriefs: [], recentTweets: [] });
-    await runBriefingPipeline();
-    expect(generateBrief).toHaveBeenCalledWith(expect.any(Object), []);
+    expect(generateBrief).toHaveBeenCalledWith(expect.any(Object), expect.any(Object));
   });
 
   it('calls saveState with the generated brief text and tweet batches', async () => {

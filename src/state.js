@@ -2,9 +2,9 @@
 
 const fs = require('fs');
 const path = require('path');
+const config = require('./config');
 
 const STATE_FILE = path.join(__dirname, '..', 'data', 'state.json');
-const MAX_HISTORY = 3;
 
 /**
  * Returns { lastRunAt, recentBriefs, recentTweets } from the state file.
@@ -39,7 +39,7 @@ function getState() {
 
 /**
  * Saves the run timestamp, generated brief, and tweet batches for the next run.
- * Prepends to rolling arrays (max MAX_HISTORY entries each, newest first).
+ * Prepends to rolling arrays (max config.history.maxEntries entries each, newest first).
  */
 function saveState(briefText, tweetBatches) {
   const dataDir = path.dirname(STATE_FILE);
@@ -48,8 +48,8 @@ function saveState(briefText, tweetBatches) {
   }
 
   const existing = getState();
-  const recentBriefs = [briefText, ...existing.recentBriefs].slice(0, MAX_HISTORY);
-  const recentTweets = [tweetBatches, ...existing.recentTweets].slice(0, MAX_HISTORY);
+  const recentBriefs = [briefText, ...existing.recentBriefs].slice(0, config.history.maxEntries);
+  const recentTweets = [tweetBatches, ...existing.recentTweets].slice(0, config.history.maxEntries);
 
   fs.writeFileSync(STATE_FILE, JSON.stringify({
     lastRunAt: new Date().toISOString(),

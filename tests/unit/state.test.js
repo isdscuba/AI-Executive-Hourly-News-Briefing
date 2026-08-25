@@ -2,8 +2,10 @@
 
 const fs = require('fs');
 const path = require('path');
+const config = require('../../src/config');
 
 const STATE_FILE = path.join(__dirname, '..', '..', 'data', 'state.json');
+const MAX_HISTORY = config.history.maxEntries;
 
 const MOCK_TWEETS = {
   tweets1: [{ text: 'A', createdAt: '2026-04-22T18:00:00Z', author: 'u1' }],
@@ -98,29 +100,23 @@ describe('saveState', () => {
     expect(data.recentTweets[0]).toEqual(MOCK_TWEETS);
   });
 
-  it('rolls briefs with newest first, capped at 3', () => {
+  it(`rolls briefs with newest first, capped at ${MAX_HISTORY}`, () => {
     const { saveState } = require('../../src/state');
-    saveState('Brief 1', MOCK_TWEETS);
-    saveState('Brief 2', MOCK_TWEETS);
-    saveState('Brief 3', MOCK_TWEETS);
-    saveState('Brief 4', MOCK_TWEETS);
+    for (let i = 1; i <= MAX_HISTORY + 1; i++) saveState(`Brief ${i}`, MOCK_TWEETS);
     const data = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
-    expect(data.recentBriefs).toHaveLength(3);
-    expect(data.recentBriefs[0]).toBe('Brief 4');
-    expect(data.recentBriefs[2]).toBe('Brief 2');
+    expect(data.recentBriefs).toHaveLength(MAX_HISTORY);
+    expect(data.recentBriefs[0]).toBe(`Brief ${MAX_HISTORY + 1}`);
+    expect(data.recentBriefs[MAX_HISTORY - 1]).toBe('Brief 2');
   });
 
-  it('rolls tweet sets with newest first, capped at 3', () => {
+  it(`rolls tweet sets with newest first, capped at ${MAX_HISTORY}`, () => {
     const { saveState } = require('../../src/state');
     const batch = (n) => ({ tweets1: [{ text: `t${n}` }], tweets2: [], tweets3: [], tweets4: [], tweets5: [] });
-    saveState('b1', batch(1));
-    saveState('b2', batch(2));
-    saveState('b3', batch(3));
-    saveState('b4', batch(4));
+    for (let i = 1; i <= MAX_HISTORY + 1; i++) saveState(`b${i}`, batch(i));
     const data = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
-    expect(data.recentTweets).toHaveLength(3);
-    expect(data.recentTweets[0].tweets1[0].text).toBe('t4');
-    expect(data.recentTweets[2].tweets1[0].text).toBe('t2');
+    expect(data.recentTweets).toHaveLength(MAX_HISTORY);
+    expect(data.recentTweets[0].tweets1[0].text).toBe(`t${MAX_HISTORY + 1}`);
+    expect(data.recentTweets[MAX_HISTORY - 1].tweets1[0].text).toBe('t2');
   });
 
   it('can be read back correctly via getState', () => {

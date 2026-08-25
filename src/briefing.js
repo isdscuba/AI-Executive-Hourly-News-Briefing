@@ -5,6 +5,9 @@ const { stripAllBatches } = require('./transform');
 const { getState, saveState } = require('./state');
 const { generateBrief } = require('./gemini');
 const { sendTelegram } = require('./telegram');
+const { dedupeTweetPool } = require('./dedup');
+
+const BATCH_KEYS = ['tweets1', 'tweets2', 'tweets3', 'tweets4', 'tweets5'];
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -54,28 +57,36 @@ function filterNewTweets(strippedBatches, sinceTimestamp) {
 }
 
 /**
- * Filters tweet batches against tweet texts seen in any recent run.
- * Prevents identical tweets (API overlap or slow-moving stories) from
- * being counted as "new" and sent to Gemini again.
+ * Dedupes tweet batches against tweet texts/near-duplicates seen in any
+ * recent run (up to config.history.maxEntries runs back), AND against
+ * each other across the 5 account batches in this same run (so multiple
+ * accounts covering the same event in one run collapse to one tweet).
+ *
+ * Two passes, both handled by dedupeTweetPool: exact match on normalized
+ * text (URL/RT-prefix/punctuation stripped), then near-duplicate
+ * detection via word-shingle Jaccard similarity. Every near-dup collapse
+ * is logged individually for auditing — see config.dedup.jaccardThreshold.
  */
 function dedupeAgainstRecentTweets(filteredBatches, recentTweets) {
-  if (!recentTweets || recentTweets.length === 0) return filteredBatches;
+  const historicalPool = (recentTweets || []).flatMap(batch => Object.values(batch).flat());
 
-  const seenTexts = new Set(
-    recentTweets.flatMap(batch =>
-      Object.values(batch).flat().map(t => t.text)
-    )
+  const tagged = BATCH_KEYS.flatMap(key =>
+    (filteredBatches[key] || []).map(t => ({ ...t, _batch: key }))
   );
 
-  const dedup = tweets => tweets.filter(t => !seenTexts.has(t.text));
+  const { kept, exactDropped, nearDupDropped } = dedupeTweetPool(tagged, { against: historicalPool });
 
-  return {
-    tweets1: dedup(filteredBatches.tweets1),
-    tweets2: dedup(filteredBatches.tweets2),
-    tweets3: dedup(filteredBatches.tweets3),
-    tweets4: dedup(filteredBatches.tweets4),
-    tweets5: dedup(filteredBatches.tweets5),
-  };
+  for (const { tweet, matchedText, similarity } of nearDupDropped) {
+    log(`Near-dup dropped (similarity ${similarity.toFixed(2)}): "${tweet.text.slice(0, 80)}" ~ "${matchedText.slice(0, 80)}"`);
+  }
+  log(`Local dedup: ${exactDropped.length} exact + ${nearDupDropped.length} near-dup removed (against ${recentTweets ? recentTweets.length : 0} prior runs)`);
+
+  const result = { tweets1: [], tweets2: [], tweets3: [], tweets4: [], tweets5: [] };
+  for (const t of kept) {
+    const { _batch, ...tweet } = t;
+    result[_batch].push(tweet);
+  }
+  return result;
 }
 
 /**
@@ -138,7 +149,8 @@ async function runBriefingPipeline({ isOpeningBrief = false } = {}) {
   const filterSince = isOpeningBrief ? midnightEtUtc : lastRunAt;
   const timestampFiltered = filterNewTweets(stripped, filterSince);
 
-  // Step 4b: Tweet-level dedup — remove tweet texts already seen in the last 3 runs
+  // Step 4b: Tweet-level dedup — exact + near-duplicate, against stored history
+  // (config.history.maxEntries runs back) and across this run's own 5 batches
   const newTweets = dedupeAgainstRecentTweets(timestampFiltered, recentTweets);
   const newTotal = Object.values(newTweets).reduce((a, b) => a + b.length, 0);
   const tsTotal = Object.values(timestampFiltered).reduce((a, b) => a + b.length, 0);

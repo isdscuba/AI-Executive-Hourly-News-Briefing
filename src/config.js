@@ -33,6 +33,18 @@ const config = {
     // Every day: every 2 hours, 7 AM–11 PM ET (7 AM brief covers midnight→7 AM)
     daily: { start: 7, end: 23, intervalHours: 2, openingHour: 7 },
   },
+
+  history: {
+    maxEntries: 8, // recentBriefs / recentTweets rolling window in state.json
+  },
+
+  dedup: {
+    shingleSize: 3, // word-shingle size for near-dup detection
+    // Strict on purpose: bias toward under-collapsing (a few near-dupes
+    // slip through) rather than over-collapsing (a real story update
+    // gets mistaken for a duplicate of the earlier tweet).
+    jaccardThreshold: 0.85,
+  },
 };
 
 module.exports = config;

@@ -15,6 +15,8 @@ jest.mock('../../src/config', () => ({
   },
   gemini: { apiKey: 'test-gemini-key', model: 'gemini-2.5-flash-lite' },
   telegram: { botToken: 'test-bot-token', chatId: '1304208404' },
+  history: { maxEntries: 8 },
+  dedup: { shingleSize: 3, jaccardThreshold: 0.85 },
 }));
 
 const mockGetState = jest.fn(() => ({ lastRunAt: null, recentBriefs: [], recentTweets: [] }));
