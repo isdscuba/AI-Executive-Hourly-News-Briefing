@@ -1,6 +1,6 @@
 'use strict';
 
-const { normalizeTweetText, shingles, jaccardSimilarity, dedupeTweetPool } = require('../../src/dedup');
+const { normalizeTweetText, shingles, jaccardSimilarity, canonicalizeUrl, dedupeTweetPool } = require('../../src/dedup');
 
 describe('normalizeTweetText', () => {
   it('lowercases and collapses whitespace', () => {
@@ -62,6 +62,22 @@ describe('jaccardSimilarity', () => {
   });
 });
 
+describe('canonicalizeUrl', () => {
+  it('lowercases the host and drops query string and fragment', () => {
+    expect(canonicalizeUrl('https://Example.com/Article?utm_source=twitter#top')).toBe('example.com/Article');
+  });
+
+  it('strips a trailing slash', () => {
+    expect(canonicalizeUrl('https://example.com/article/')).toBe('example.com/article');
+  });
+
+  it('returns null for null/undefined/unparseable input', () => {
+    expect(canonicalizeUrl(null)).toBeNull();
+    expect(canonicalizeUrl(undefined)).toBeNull();
+    expect(canonicalizeUrl('not a url')).toBeNull();
+  });
+});
+
 describe('dedupeTweetPool', () => {
   it('keeps everything when there is nothing to compare against', () => {
     const tweets = [{ text: 'first story' }, { text: 'second story' }];
@@ -113,5 +129,55 @@ describe('dedupeTweetPool', () => {
     const paraphrase = 'large explosion reported near central train station in downtown area sources say blast was confirmed';
     const { kept } = dedupeTweetPool([{ text: original }, { text: paraphrase }]);
     expect(kept).toHaveLength(1);
+  });
+
+  it('drops an exact tweet-id match against the historical pool, before any text comparison', () => {
+    const { kept, idDropped } = dedupeTweetPool(
+      [{ text: 'completely different wording now', id: '42' }],
+      { against: [{ text: 'original wording', id: '42' }] }
+    );
+    expect(kept).toHaveLength(0);
+    expect(idDropped).toHaveLength(1);
+  });
+
+  it('drops a canonical-URL match even when the surrounding text is completely different', () => {
+    const { kept, urlDropped } = dedupeTweetPool(
+      [{ text: 'Wow, huge story, everyone is talking about this', url: 'https://example.com/article?utm_source=x' }],
+      { against: [{ text: 'Breaking: something happened', url: 'https://example.com/article' }] }
+    );
+    expect(kept).toHaveLength(0);
+    expect(urlDropped).toHaveLength(1);
+  });
+
+  it('falls through cleanly to text-based dedup when id/url are absent', () => {
+    const { kept, exactDropped } = dedupeTweetPool(
+      [{ text: 'breaking news today', id: null, url: null }],
+      { against: [{ text: 'breaking news today', id: null, url: null }] }
+    );
+    expect(kept).toHaveLength(0);
+    expect(exactDropped).toHaveLength(1);
+  });
+
+  it('does not drop on url match when the tweet has no url', () => {
+    const { kept, urlDropped } = dedupeTweetPool(
+      [{ text: 'a distinct headline about something else' }],
+      { against: [{ text: 'a totally unrelated older headline', url: 'https://example.com/article' }] }
+    );
+    expect(urlDropped).toHaveLength(0);
+    expect(kept).toHaveLength(1);
+  });
+
+  it('reports a near-miss below the drop threshold without dropping the tweet', () => {
+    const original = 'large explosion reported near central train station in downtown area sources say blast was reported';
+    // Jaccard similarity ~0.80 against `original` — below the 0.85 drop threshold, above the 0.60 report floor.
+    const distinctButSimilar = 'large explosion reported near central train station in downtown area sources say blast was confirmed dead';
+    const { kept, nearMisses } = dedupeTweetPool(
+      [{ text: distinctButSimilar }],
+      { against: [{ text: original }] }
+    );
+    expect(kept).toHaveLength(1);
+    expect(nearMisses).toHaveLength(1);
+    expect(nearMisses[0].similarity).toBeLessThan(0.85);
+    expect(nearMisses[0].similarity).toBeGreaterThanOrEqual(0.60);
   });
 });

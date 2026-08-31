@@ -5,15 +5,15 @@ const rawFixture = require('../fixtures/sample-tweets-raw.json');
 const strippedFixture = require('../fixtures/sample-tweets-stripped.json');
 
 describe('stripTweets', () => {
-  it('extracts text, createdAt, and author.userName from a valid tweet', () => {
+  it('extracts text, createdAt, author.userName, id, and url from a valid tweet', () => {
     const result = stripTweets(rawFixture);
     expect(result).toEqual(strippedFixture);
   });
 
-  it('returns only 3 fields per tweet (no extra fields)', () => {
+  it('returns only 5 fields per tweet (no extra fields)', () => {
     const result = stripTweets(rawFixture);
     result.forEach(tweet => {
-      expect(Object.keys(tweet)).toEqual(['text', 'createdAt', 'author']);
+      expect(Object.keys(tweet)).toEqual(['text', 'createdAt', 'author', 'id', 'url']);
     });
   });
 
@@ -55,10 +55,11 @@ describe('stripTweets', () => {
     expect(result[0].author).toBe('testUser');
   });
 
-  it('strips all extra fields (engagement counts, media, card, etc.)', () => {
+  it('strips all extra fields (engagement counts, media, card, etc.) but keeps id and url', () => {
     const result = stripTweets(rawFixture);
     result.forEach(tweet => {
-      expect(tweet).not.toHaveProperty('id');
+      expect(tweet).toHaveProperty('id');
+      expect(tweet).toHaveProperty('url');
       expect(tweet).not.toHaveProperty('likeCount');
       expect(tweet).not.toHaveProperty('retweetCount');
       expect(tweet).not.toHaveProperty('viewCount');
@@ -70,6 +71,22 @@ describe('stripTweets', () => {
       expect(tweet).not.toHaveProperty('source');
       expect(tweet).not.toHaveProperty('conversationId');
     });
+  });
+
+  it('extracts the first resolved entities.urls[].expandedUrl as url', () => {
+    const result = stripTweets(rawFixture);
+    expect(result[0].url).toBe('https://example.com/article');
+  });
+
+  it('returns url: null when a tweet has no entities.urls', () => {
+    const result = stripTweets(rawFixture);
+    expect(result[1].url).toBeNull();
+  });
+
+  it('returns id: null when a tweet has no id', () => {
+    const tweet = { text: 'test', createdAt: '2026-01-01T00:00:00Z' };
+    const result = stripTweets([tweet]);
+    expect(result[0].id).toBeNull();
   });
 
   it('handles an array with mixed valid and invalid tweet shapes', () => {
@@ -123,7 +140,7 @@ describe('stripAllBatches', () => {
     expect(result.tweets5).toEqual([]);
   });
 
-  it('each stripped tweet in output has only text, createdAt, author fields', () => {
+  it('each stripped tweet in output has only text, createdAt, author, id, url fields', () => {
     const result = stripAllBatches({
       tweets1: rawFixture,
       tweets2: [],
@@ -132,7 +149,7 @@ describe('stripAllBatches', () => {
       tweets5: [],
     });
     result.tweets1.forEach(t => {
-      expect(Object.keys(t)).toEqual(['text', 'createdAt', 'author']);
+      expect(Object.keys(t)).toEqual(['text', 'createdAt', 'author', 'id', 'url']);
     });
   });
 });

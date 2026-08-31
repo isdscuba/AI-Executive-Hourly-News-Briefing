@@ -147,6 +147,28 @@ describe('dedupeAgainstRecentTweets', () => {
     expect(result.tweets1).toHaveLength(1);
   });
 
+  it('collapses a shared-article duplicate across accounts via canonical URL, despite different commentary', () => {
+    const recent = [
+      { tweets1: [{ text: 'Breaking: major development', url: 'https://example.com/story?utm_source=twitter' }], tweets2: [], tweets3: [], tweets4: [], tweets5: [] },
+    ];
+    const result = dedupeAgainstRecentTweets(
+      { tweets1: [{ text: 'This is a big deal, everyone should read this', url: 'https://example.com/story' }], tweets2: [], tweets3: [], tweets4: [], tweets5: [] },
+      recent
+    );
+    expect(result.tweets1).toHaveLength(0);
+  });
+
+  it('drops an exact tweet-id repost even when the text differs', () => {
+    const recent = [
+      { tweets1: [{ text: 'Original wording of the tweet', id: 'abc123' }], tweets2: [], tweets3: [], tweets4: [], tweets5: [] },
+    ];
+    const result = dedupeAgainstRecentTweets(
+      { tweets1: [{ text: 'Edited/re-fetched wording of the same tweet', id: 'abc123' }], tweets2: [], tweets3: [], tweets4: [], tweets5: [] },
+      recent
+    );
+    expect(result.tweets1).toHaveLength(0);
+  });
+
   it('collapses near-duplicates posted across different batches within the same run', () => {
     const result = dedupeAgainstRecentTweets(
       {

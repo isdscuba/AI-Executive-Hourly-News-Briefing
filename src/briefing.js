@@ -62,10 +62,13 @@ function filterNewTweets(strippedBatches, sinceTimestamp) {
  * each other across the 5 account batches in this same run (so multiple
  * accounts covering the same event in one run collapse to one tweet).
  *
- * Two passes, both handled by dedupeTweetPool: exact match on normalized
- * text (URL/RT-prefix/punctuation stripped), then near-duplicate
- * detection via word-shingle Jaccard similarity. Every near-dup collapse
- * is logged individually for auditing — see config.dedup.jaccardThreshold.
+ * Four passes, all handled by dedupeTweetPool: exact tweet-id match, exact
+ * canonical-URL match (catches different accounts sharing the same article),
+ * exact match on normalized text (URL/RT-prefix/punctuation stripped), then
+ * near-duplicate detection via word-shingle Jaccard similarity. Every
+ * URL/near-dup collapse is logged individually for auditing — see
+ * config.dedup.jaccardThreshold. Near-misses just under the threshold are
+ * also logged (not dropped) to gather data for future threshold tuning.
  */
 function dedupeAgainstRecentTweets(filteredBatches, recentTweets) {
   const historicalPool = (recentTweets || []).flatMap(batch => Object.values(batch).flat());
@@ -74,12 +77,19 @@ function dedupeAgainstRecentTweets(filteredBatches, recentTweets) {
     (filteredBatches[key] || []).map(t => ({ ...t, _batch: key }))
   );
 
-  const { kept, exactDropped, nearDupDropped } = dedupeTweetPool(tagged, { against: historicalPool });
+  const { kept, idDropped, urlDropped, exactDropped, nearDupDropped, nearMisses } =
+    dedupeTweetPool(tagged, { against: historicalPool });
 
+  for (const tweet of urlDropped) {
+    log(`URL-dup dropped: "${tweet.text.slice(0, 80)}" ~ ${tweet.url}`);
+  }
   for (const { tweet, matchedText, similarity } of nearDupDropped) {
     log(`Near-dup dropped (similarity ${similarity.toFixed(2)}): "${tweet.text.slice(0, 80)}" ~ "${matchedText.slice(0, 80)}"`);
   }
-  log(`Local dedup: ${exactDropped.length} exact + ${nearDupDropped.length} near-dup removed (against ${recentTweets ? recentTweets.length : 0} prior runs)`);
+  for (const { tweet, matchedText, similarity } of nearMisses) {
+    log(`Near-miss (similarity ${similarity.toFixed(2)}, below threshold): "${tweet.text.slice(0, 80)}" ~ "${matchedText.slice(0, 80)}"`);
+  }
+  log(`Local dedup: ${idDropped.length} id + ${urlDropped.length} url + ${exactDropped.length} exact + ${nearDupDropped.length} near-dup removed (against ${recentTweets ? recentTweets.length : 0} prior runs)`);
 
   const result = { tweets1: [], tweets2: [], tweets3: [], tweets4: [], tweets5: [] };
   for (const t of kept) {

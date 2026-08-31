@@ -48,27 +48,60 @@ function jaccardSimilarity(setA, setB) {
 }
 
 /**
+ * Canonicalizes a resolved article URL for exact-match comparison: lowercase
+ * host, strip trailing slash, drop query string/fragment entirely. The URL
+ * is already t.co-expanded by the API, so this is enough to catch
+ * ?utm_source=... variants of the same link without a tracking-param allowlist.
+ * Returns null for anything that doesn't parse as a URL.
+ */
+function canonicalizeUrl(url) {
+  if (!url) return null;
+  try {
+    const parsed = new URL(url);
+    const path = parsed.pathname.replace(/\/+$/, '');
+    return `${parsed.hostname.toLowerCase()}${path}`;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Dedupes a flat list of tweets against an optional pool of already-known
  * representatives, plus against itself (so within-run duplicates across
  * different source batches also collapse).
  *
- * Pass 1 (cheap): drop exact matches on normalized text.
- * Pass 2: drop near-duplicates via word-shingle Jaccard similarity
+ * Pass 1 (cheapest, zero false positives): drop exact tweet-id matches.
+ * Pass 2 (cheap, zero false positives): drop exact canonical-URL matches —
+ * catches different accounts sharing the same article with different
+ * commentary, which text similarity can't see.
+ * Pass 3: drop exact matches on normalized text.
+ * Pass 4: drop near-duplicates via word-shingle Jaccard similarity
  * against jaccardThreshold. The first-encountered tweet in a duplicate
- * cluster is always kept as the representative.
+ * cluster is always kept as the representative. Near-misses (similarity
+ * in [0.60, threshold)) are also reported, purely for calibration —
+ * they are NOT dropped.
  *
- * @param {Array<{text: string}>} tweets - ordered list of new tweets
+ * Tweets missing an id/url (older history, or text-only tweets) simply
+ * skip that pass and fall through to the next one.
+ *
+ * @param {Array<{text: string, id?: string, url?: string}>} tweets - ordered list of new tweets
  * @param {Object} [opts]
- * @param {Array<{text: string}>} [opts.against] - historical representatives to compare against
+ * @param {Array<{text: string, id?: string, url?: string}>} [opts.against] - historical representatives to compare against
  * @param {number} [opts.threshold] - Jaccard threshold, defaults to config
- * @returns {{ kept: Array, exactDropped: Array, nearDupDropped: Array }}
- *   nearDupDropped entries are { tweet, matchedText, similarity } for audit logging.
+ * @returns {{ kept: Array, idDropped: Array, urlDropped: Array, exactDropped: Array, nearDupDropped: Array, nearMisses: Array }}
+ *   nearDupDropped/nearMisses entries are { tweet, matchedText, similarity } for audit logging.
  */
 function dedupeTweetPool(tweets, { against = [], threshold = config.dedup.jaccardThreshold } = {}) {
+  const seenIds = new Set();
+  const seenUrls = new Set();
   const seenNormalized = new Set();
   const seenShingles = []; // [{ normalized, shingleSet }]
 
   for (const rep of against) {
+    if (rep.id) seenIds.add(rep.id);
+    const canonicalUrl = canonicalizeUrl(rep.url);
+    if (canonicalUrl) seenUrls.add(canonicalUrl);
+
     const normalized = normalizeTweetText(rep.text);
     if (!normalized) continue;
     seenNormalized.add(normalized);
@@ -76,14 +109,30 @@ function dedupeTweetPool(tweets, { against = [], threshold = config.dedup.jaccar
   }
 
   const kept = [];
+  const idDropped = [];
+  const urlDropped = [];
   const exactDropped = [];
   const nearDupDropped = [];
+  const nearMisses = [];
 
   for (const tweet of tweets) {
+    if (tweet.id && seenIds.has(tweet.id)) {
+      idDropped.push(tweet);
+      continue;
+    }
+
+    const canonicalUrl = canonicalizeUrl(tweet.url);
+    if (canonicalUrl && seenUrls.has(canonicalUrl)) {
+      urlDropped.push(tweet);
+      continue;
+    }
+
     const normalized = normalizeTweetText(tweet.text);
 
     if (!normalized) {
       kept.push(tweet);
+      if (tweet.id) seenIds.add(tweet.id);
+      if (canonicalUrl) seenUrls.add(canonicalUrl);
       continue;
     }
 
@@ -109,12 +158,18 @@ function dedupeTweetPool(tweets, { against = [], threshold = config.dedup.jaccar
       continue;
     }
 
+    if (matched && bestSimilarity >= 0.60) {
+      nearMisses.push({ tweet, matchedText: matched.normalized, similarity: bestSimilarity });
+    }
+
     kept.push(tweet);
+    if (tweet.id) seenIds.add(tweet.id);
+    if (canonicalUrl) seenUrls.add(canonicalUrl);
     seenNormalized.add(normalized);
     seenShingles.push({ normalized, shingleSet: tweetShingles });
   }
 
-  return { kept, exactDropped, nearDupDropped };
+  return { kept, idDropped, urlDropped, exactDropped, nearDupDropped, nearMisses };
 }
 
-module.exports = { normalizeTweetText, shingles, jaccardSimilarity, dedupeTweetPool };
+module.exports = { normalizeTweetText, shingles, jaccardSimilarity, canonicalizeUrl, dedupeTweetPool };

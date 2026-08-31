@@ -1,11 +1,20 @@
 'use strict';
 
 /**
+ * Returns the first resolved (t.co-expanded) article URL on a tweet, or
+ * null if it's text-only. Used as a cheap, high-confidence dedup signal —
+ * multiple accounts often share the same article with different commentary.
+ */
+function extractPrimaryUrl(tweet) {
+  return tweet?.entities?.urls?.[0]?.expandedUrl ?? null;
+}
+
+/**
  * Strips a raw Twitter API tweet array down to only the fields
- * Gemini needs for intelligence analysis.
+ * Gemini needs for intelligence analysis, plus id/url for local dedup.
  *
  * Input:  Raw data.tweets array from twitterapi.io (~3-5KB per tweet)
- * Output: Minimal array of { text, createdAt, author } objects
+ * Output: Minimal array of { text, createdAt, author, id, url } objects
  *
  * Expected reduction: ~95% token savings (178K → ~8K tokens)
  */
@@ -16,6 +25,8 @@ function stripTweets(rawTweets) {
     text: tweet?.text,
     createdAt: tweet?.createdAt,
     author: tweet?.author?.userName ?? 'unknown',
+    id: tweet?.id ?? null,
+    url: extractPrimaryUrl(tweet),
   }));
 }
 
@@ -33,4 +44,4 @@ function stripAllBatches({ tweets1, tweets2, tweets3, tweets4, tweets5 }) {
   };
 }
 
-module.exports = { stripTweets, stripAllBatches };
+module.exports = { stripTweets, stripAllBatches, extractPrimaryUrl };
