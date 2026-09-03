@@ -88,15 +88,62 @@ function verifyCitations(briefText, allTweets) {
     .trim();
 }
 
+// Bare section-header lines from the KEY INTELLIGENCE format (see buildPrompt's
+// OUTPUT FORMAT section) — matched by exact text, NOT by leading emoji, because
+// individual 🚨 URGENT bullets also start with 🚨 and must NOT be filtered out.
+const SECTION_HEADERS = new Set([
+  '🚨 BREAKING', '📈 MARKETS', '🏛️ POLITICS', '🛡️ SECURITY', '🌍 INTERNATIONAL',
+  '⚖️ JUSTICE', '💼 BUSINESS', '📊 DATA', '🎯 INTEL', '🌡️ CLIMATE', '💊 HEALTH',
+  '⚡ ENERGY', '🏗️ INFRASTRUCTURE', '🚗 TECHNOLOGY', '💰 CRYPTO', '🏠 HOUSING',
+  '📱 SOCIAL', 'UNCATEGORIZED INTEL',
+]);
+
+/**
+ * Builds a "do not repeat" section from recent brief history, as a flat list
+ * of individual story bullets rather than full brief blocks — a narrative
+ * block invites the model to copy phrasing/numbers wholesale, whereas a flat
+ * per-story list gives it a direct comparison target. Safe to feed back
+ * because verifyCitations() strips any bullet that isn't backed by a tweet
+ * in the CURRENT batch, so an echoed/anchored old fact can't survive even if
+ * the model copies it — it structurally closes the hallucination vector that
+ * killed the original (full-brief-block) version of this feature.
+ */
+function buildDeduplicationSection(recentBriefs) {
+  if (!recentBriefs || recentBriefs.length === 0) return '';
+
+  const bullets = recentBriefs.flatMap(brief =>
+    String(brief).split('\n')
+      .map(l => l.trim())
+      .filter(l =>
+        l.length > 0 &&
+        !l.startsWith('🚨 URGENT') &&
+        !l.startsWith('KEY INTELLIGENCE') &&
+        !SECTION_HEADERS.has(l)
+      )
+  );
+
+  if (bullets.length === 0) return '';
+
+  const bulletList = bullets.map(b => `- ${b}`).join('\n');
+  const n = recentBriefs.length;
+
+  return `STORY EXCLUSION LIST — these stories were already reported in the last ${n} brief${n > 1 ? 's' : ''}. Do NOT include any story whose actor + core fact matches an item below, even if a new tweet words it differently. Only include it again if a tweet in the current dataset adds a materially new data point: a new named casualty count, a new confirmed statistic, a new location, or a confirmed escalation. Restatements and updates-without-new-facts must be skipped entirely.
+${bulletList}
+
+`;
+}
+
 /**
  * Generates an intelligence briefing from stripped tweet batches.
  * Every bullet in the output is verified against the source tweet corpus —
  * uncited or unverifiable bullets are stripped before returning.
  *
  * @param {Object} strippedBatches - { tweets1..5 }
+ * @param {string[]} [opts.recentBriefs] - up to config.history.maxEntries previous
+ *   brief texts (newest first), used to suppress already-reported stories
  * @returns {string} Verified brief text
  */
-async function generateBrief(strippedBatches, { modelOverride } = {}) {
+async function generateBrief(strippedBatches, { modelOverride, recentBriefs = [] } = {}) {
   const allTweets = [
     ...strippedBatches.tweets1,
     ...strippedBatches.tweets2,
@@ -105,7 +152,7 @@ async function generateBrief(strippedBatches, { modelOverride } = {}) {
     ...strippedBatches.tweets5,
   ];
 
-  const prompt = buildPrompt({ allTweets, currentUtcDatetime: new Date().toISOString() });
+  const prompt = buildPrompt({ allTweets, currentUtcDatetime: new Date().toISOString(), recentBriefs });
 
   const resolvedModel = modelOverride || config.gemini.model;
   // Hard cap on generation length. Target output is 2,800-3,400 chars (~700-850
@@ -122,7 +169,7 @@ async function generateBrief(strippedBatches, { modelOverride } = {}) {
   return verifyCitations(result.response.text(), allTweets);
 }
 
-function buildPrompt({ allTweets, currentUtcDatetime }) {
+function buildPrompt({ allTweets, currentUtcDatetime, recentBriefs = [] }) {
   const numberedTweets = allTweets
     .map((t, i) => {
       const author = (typeof t.author === 'object' ? t.author?.userName : t.author) || 'unknown';
@@ -130,11 +177,13 @@ function buildPrompt({ allTweets, currentUtcDatetime }) {
     })
     .join('\n\n');
 
+  const deduplicationSection = buildDeduplicationSection(recentBriefs);
+
   return `You are an Executive Intelligence Analyst producing a real-time situational awareness briefing for C-suite leadership.
 
 MISSION: Analyse ONLY the tweet dataset below. No outside information. No knowledge from training data.
 
-TIME FILTER: Process ONLY tweets timestamped within the past 2 hours of ${currentUtcDatetime} (UTC). Silently discard all older tweets before doing anything else.
+${deduplicationSection}TIME FILTER: Process ONLY tweets timestamped within the past 2 hours of ${currentUtcDatetime} (UTC). Silently discard all older tweets before doing anything else.
 
 🔒 INTELLIGENCE RULES
 
@@ -190,4 +239,4 @@ TWEET DATA (${allTweets.length} tweets, numbered for citation):
 ${numberedTweets}`;
 }
 
-module.exports = { generateBrief, buildPrompt, verifyCitations };
+module.exports = { generateBrief, buildPrompt, buildDeduplicationSection, verifyCitations };

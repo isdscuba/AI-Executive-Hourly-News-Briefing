@@ -68,7 +68,7 @@ describe('Full pipeline integration', () => {
   });
 
   it('includes previous brief in prompt when recentBriefs is set (story dedup)', async () => {
-    mockGetState.mockReturnValue({ lastRunAt: null, recentBriefs: ['Previous hour intel here'], recentTweets: [] });
+    mockGetState.mockReturnValue({ lastRunAt: null, recentBriefs: ['* Previous hour intel here. [T1]'], recentTweets: [] });
     fetchMock.mockResponses(
       [twitterResp(rawFixture), { status: 200 }],
       [twitterResp([]), { status: 200 }], [twitterResp([]), { status: 200 }],

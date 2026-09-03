@@ -189,7 +189,7 @@ async function runBriefingPipeline({ isOpeningBrief = false } = {}) {
     const { delay, model: modelOverride } = attempts[i];
     if (delay > 0) await sleep(delay);
     try {
-      briefText = await generateBrief(newTweets, { modelOverride });
+      briefText = await generateBrief(newTweets, { modelOverride, recentBriefs });
       if (modelOverride) log(`Used fallback model: ${modelOverride}`);
       break;
     } catch (err) {
