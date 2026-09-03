@@ -108,9 +108,14 @@ async function generateBrief(strippedBatches, { modelOverride } = {}) {
   const prompt = buildPrompt({ allTweets, currentUtcDatetime: new Date().toISOString() });
 
   const resolvedModel = modelOverride || config.gemini.model;
+  // Hard cap on generation length. Target output is 2,800-3,400 chars (~700-850
+  // tokens) plus citation tags; 1536 tokens (~6,000 chars) leaves comfortable
+  // headroom while still hard-stopping the repetition-loop failure mode seen
+  // on 2026-09-03, where an uncapped flash-lite call produced 288,204 chars
+  // before the 3,800-char post-hoc truncation discarded almost all of it.
   const generationConfig = resolvedModel.startsWith('gemini-2.5')
-    ? { thinkingConfig: { thinkingBudget: 0 }, responseModalities: ['text'] }
-    : { responseModalities: ['text'] };
+    ? { thinkingConfig: { thinkingBudget: 0 }, responseModalities: ['text'], maxOutputTokens: 1536 }
+    : { responseModalities: ['text'], maxOutputTokens: 1536 };
   const model = getGenAI().getGenerativeModel({ model: resolvedModel, generationConfig });
 
   const result = await model.generateContent(prompt);
