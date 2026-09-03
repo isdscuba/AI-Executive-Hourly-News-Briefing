@@ -97,7 +97,10 @@ describe('Full pipeline integration', () => {
   });
 
   it('saves state with the generated brief text and tweet batches', async () => {
-    const BRIEF = '🚨 UNIQUE BRIEF';
+    // Must cite tweet 1 from rawFixture and share ≥2 of its content words —
+    // verifyCitations strips any bullet that doesn't, and would otherwise
+    // silently turn this into an empty-string assertion.
+    const BRIEF = '* Israeli forces strike Hezbollah command center. [T1]';
     mockGenerateContent.mockResolvedValue({ response: { text: () => BRIEF } });
     fetchMock.mockResponses(
       [twitterResp(rawFixture), { status: 200 }],
@@ -107,7 +110,8 @@ describe('Full pipeline integration', () => {
     );
     const { runBriefingPipeline } = require('../../src/briefing');
     await runBriefingPipeline();
-    expect(mockSaveState).toHaveBeenCalledWith(BRIEF, expect.any(Object));
+    // verifyCitations strips the [Tx] tag from a verified bullet before it's saved.
+    expect(mockSaveState).toHaveBeenCalledWith('* Israeli forces strike Hezbollah command center.', expect.any(Object));
   });
 
   it('filters out old tweets when lastRunAt is set, skipping Gemini if none remain', async () => {
@@ -123,12 +127,15 @@ describe('Full pipeline integration', () => {
     expect(mockGenerateContent).not.toHaveBeenCalled();
   });
 
-  it('skips Gemini and Telegram when all batches are empty', async () => {
+  it('skips Gemini but still sends a zero-tweet health alert to Telegram when all batches are empty', async () => {
     fetchMock.mockResponse(twitterResp([]));
     const { runBriefingPipeline } = require('../../src/briefing');
     await runBriefingPipeline();
     expect(mockGenerateContent).not.toHaveBeenCalled();
-    expect(fetchMock.mock.calls.filter(([u]) => u.includes('telegram'))).toHaveLength(0);
+    const telegramCalls = fetchMock.mock.calls.filter(([u]) => u.includes('telegram'));
+    expect(telegramCalls).toHaveLength(1);
+    const body = JSON.parse(telegramCalls[0][1].body);
+    expect(body.text).toContain('returned 0 tweets');
   });
 
   it('logs token reduction from raw to stripped', async () => {

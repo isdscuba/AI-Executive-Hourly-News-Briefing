@@ -95,20 +95,20 @@ describe('sendTelegram', () => {
     expect(body.text).toContain('My brief content');
   });
 
-  it('truncates brief text to 4000 characters', async () => {
+  it('truncates brief text to 3900 characters', async () => {
     fetchMock.mockResponseOnce(JSON.stringify({ ok: true, result: { message_id: 1 } }));
     const longText = 'x'.repeat(5000);
     await sendTelegram(longText);
     const [, options] = fetchMock.mock.calls[0];
     const body = JSON.parse(options.body);
-    // The body includes the header (~30 chars) + 4000 chars of brief
+    // The body includes the header (~30 chars) + 3900 chars of brief
     const headerLength = body.text.indexOf('\n\n') + 2;
     const briefPortion = body.text.slice(headerLength);
-    expect(briefPortion).toHaveLength(4000);
-    expect(briefPortion).toBe('x'.repeat(4000));
+    expect(briefPortion).toHaveLength(3900);
+    expect(briefPortion).toBe('x'.repeat(3900));
   });
 
-  it('does not truncate when brief text is under 4000 characters', async () => {
+  it('does not truncate when brief text is under 3900 characters', async () => {
     fetchMock.mockResponseOnce(JSON.stringify({ ok: true, result: { message_id: 1 } }));
     const shortText = 'Short brief';
     await sendTelegram(shortText);

@@ -21,7 +21,7 @@ function formatEasternTime(date) {
  * Message format:
  *   🐦 TWITTER INTEL BRIEF | {h:mm A ET}
  *
- *   {brief text, truncated to 4000 chars}
+ *   {brief text, truncated to 3900 chars}
  */
 async function sendTelegram(briefText) {
   const time = formatEasternTime(new Date());

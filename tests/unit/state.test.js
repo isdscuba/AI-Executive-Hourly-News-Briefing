@@ -5,6 +5,8 @@ const path = require('path');
 const config = require('../../src/config');
 
 const STATE_FILE = path.join(__dirname, '..', '..', 'data', 'state.json');
+const BACKUP_FILE = `${STATE_FILE}.bak`;
+const TMP_FILE = `${STATE_FILE}.tmp`;
 const MAX_HISTORY = config.history.maxEntries;
 
 const MOCK_TWEETS = {
@@ -13,7 +15,9 @@ const MOCK_TWEETS = {
 };
 
 function cleanup() {
-  try { fs.unlinkSync(STATE_FILE); } catch {}
+  for (const f of [STATE_FILE, BACKUP_FILE, TMP_FILE]) {
+    try { fs.unlinkSync(f); } catch {}
+  }
   try { fs.rmdirSync(path.dirname(STATE_FILE)); } catch {}
 }
 
@@ -66,6 +70,37 @@ describe('getState', () => {
     const state = getState();
     expect(state.recentBriefs).toEqual([]);
     expect(state.recentTweets).toEqual([]);
+  });
+
+  it('falls back to the .bak file when state.json is missing', () => {
+    fs.mkdirSync(path.dirname(STATE_FILE), { recursive: true });
+    fs.writeFileSync(BACKUP_FILE, JSON.stringify({
+      lastRunAt: '2026-03-31T18:00:00.000Z',
+      recentBriefs: ['Backup brief'],
+      recentTweets: [MOCK_TWEETS],
+    }), 'utf8');
+    const { getState } = require('../../src/state');
+    const state = getState();
+    expect(state.lastRunAt).toBe('2026-03-31T18:00:00.000Z');
+    expect(state.recentBriefs).toEqual(['Backup brief']);
+  });
+
+  it('falls back to the .bak file when state.json is corrupt', () => {
+    fs.mkdirSync(path.dirname(STATE_FILE), { recursive: true });
+    fs.writeFileSync(STATE_FILE, 'not json', 'utf8');
+    fs.writeFileSync(BACKUP_FILE, JSON.stringify({
+      lastRunAt: '2026-03-31T18:00:00.000Z',
+      recentBriefs: ['Backup brief'],
+      recentTweets: [],
+    }), 'utf8');
+    const { getState } = require('../../src/state');
+    const state = getState();
+    expect(state.recentBriefs).toEqual(['Backup brief']);
+  });
+
+  it('starts fresh when both state.json and .bak are missing', () => {
+    const { getState } = require('../../src/state');
+    expect(getState()).toEqual({ lastRunAt: null, recentBriefs: [], recentTweets: [] });
   });
 });
 
@@ -126,5 +161,27 @@ describe('saveState', () => {
     expect(state.recentBriefs[0]).toBe('Round-trip test');
     expect(state.recentTweets[0]).toEqual(MOCK_TWEETS);
     expect(state.lastRunAt).not.toBeNull();
+  });
+
+  it('does not leave a .tmp file behind after a successful save', () => {
+    const { saveState } = require('../../src/state');
+    saveState('Test brief', MOCK_TWEETS);
+    expect(fs.existsSync(TMP_FILE)).toBe(false);
+  });
+
+  it('writes the pre-save state.json to .bak before replacing it', () => {
+    const { saveState } = require('../../src/state');
+    saveState('First brief', MOCK_TWEETS);
+    saveState('Second brief', MOCK_TWEETS);
+    const backup = JSON.parse(fs.readFileSync(BACKUP_FILE, 'utf8'));
+    const current = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
+    expect(backup.recentBriefs[0]).toBe('First brief');
+    expect(current.recentBriefs[0]).toBe('Second brief');
+  });
+
+  it('does not write a .bak file on the very first save (nothing to back up)', () => {
+    const { saveState } = require('../../src/state');
+    saveState('First brief', MOCK_TWEETS);
+    expect(fs.existsSync(BACKUP_FILE)).toBe(false);
   });
 });
