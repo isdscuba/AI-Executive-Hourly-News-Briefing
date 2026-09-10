@@ -1,6 +1,6 @@
 'use strict';
 
-const { normalizeTweetText, shingles, jaccardSimilarity, canonicalizeUrl, dedupeTweetPool } = require('../../src/dedup');
+const { normalizeTweetText, shingles, jaccardSimilarity, canonicalizeUrl, dedupeTweetPool, dedupeBulletsAgainstText } = require('../../src/dedup');
 
 describe('normalizeTweetText', () => {
   it('lowercases and collapses whitespace', () => {
@@ -179,5 +179,46 @@ describe('dedupeTweetPool', () => {
     expect(nearMisses).toHaveLength(1);
     expect(nearMisses[0].similarity).toBeLessThan(0.85);
     expect(nearMisses[0].similarity).toBeGreaterThanOrEqual(0.60);
+  });
+});
+
+describe('dedupeBulletsAgainstText', () => {
+  it('keeps everything when there are no old bullets to compare against', () => {
+    const { kept, dropped } = dedupeBulletsAgainstText(['Houthi forces seized the port city of Mocha'], []);
+    expect(kept).toHaveLength(1);
+    expect(dropped).toHaveLength(0);
+  });
+
+  it('drops a paraphrased repeat of an old bullet above the story threshold', () => {
+    const old = 'Houthi forces seized the strategic port city of Mocha in Yemen';
+    const repeat = 'Houthi forces have seized the strategic port city of Mocha in Yemen';
+    const { kept, dropped } = dedupeBulletsAgainstText([repeat], [old], 0.5);
+    expect(kept).toHaveLength(0);
+    expect(dropped).toHaveLength(1);
+    expect(dropped[0].similarity).toBeGreaterThanOrEqual(0.5);
+  });
+
+  it('keeps a genuinely distinct new bullet below the story threshold', () => {
+    const old = 'Houthi forces seized the strategic port city of Mocha in Yemen';
+    const distinct = 'Brent crude oil futures rose above one hundred seven dollars per barrel';
+    const { kept, dropped } = dedupeBulletsAgainstText([distinct], [old], 0.5);
+    expect(kept).toHaveLength(1);
+    expect(dropped).toHaveLength(0);
+  });
+
+  it('handles empty/undefined inputs', () => {
+    expect(dedupeBulletsAgainstText([], []).kept).toHaveLength(0);
+    expect(dedupeBulletsAgainstText(undefined, undefined).kept).toHaveLength(0);
+    expect(dedupeBulletsAgainstText(['a new bullet'], undefined).kept).toHaveLength(1);
+  });
+
+  it('respects a custom threshold', () => {
+    const old = 'the quick brown fox jumps over the lazy dog today';
+    const similar = 'the quick brown fox jumps over the lazy cat today';
+    const strict = dedupeBulletsAgainstText([similar], [old], 0.99);
+    expect(strict.kept).toHaveLength(1);
+
+    const loose = dedupeBulletsAgainstText([similar], [old], 0.5);
+    expect(loose.kept).toHaveLength(0);
   });
 });

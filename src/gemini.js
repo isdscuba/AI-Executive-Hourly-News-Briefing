@@ -2,6 +2,7 @@
 
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const config = require('./config');
+const { dedupeBulletsAgainstText } = require('./dedup');
 
 let _genAI = null;
 function getGenAI() {
@@ -29,15 +30,35 @@ const STOPWORDS = new Set([
  */
 function verifyCitations(briefText, allTweets) {
   const CITE_RE = /\s*\[T\d+(?:,\s*T\d+)*\]/g;
+  // A single well-formed citation bracket, used to reject brackets that
+  // merely start with "[Tx" but contain other text — e.g. a model
+  // hallucinated annotation like "[T60 - duplicate context...]" — rather
+  // than loosely parsing whatever T-numbers happen to appear inside them.
+  const CLEAN_CITE_RE = /^\[T\d+(?:,\s*T\d+)*\]$/;
 
   let inUrgentSection = false;
   const lines = briefText.split('\n');
   const cleaned = lines.map(line => {
-    const trimmed = line.trim();
+    let trimmed = line.trim();
 
     // Track which section we're in so plain-text URGENT items are detected
     if (trimmed.startsWith('🚨 URGENT DEVELOPMENTS')) { inUrgentSection = true; return line; }
     if (trimmed.startsWith('KEY INTELLIGENCE'))        { inUrgentSection = false; return line; }
+
+    // Section header lines pass through untouched here — emptiness is
+    // resolved by removeEmptyHeaders() below, once the final bullet set
+    // (after citation stripping) is known.
+    if (isSectionHeaderLine(trimmed)) return line;
+
+    // Normalize bullets that mistakenly lead with a category emoji instead
+    // of "*" (format drift from the model) so they're classified correctly
+    // below and go through citation verification like every other bullet —
+    // otherwise they'd silently skip verification entirely.
+    const emojiPrefix = CATEGORY_EMOJIS.find(e => trimmed.startsWith(`${e} `));
+    if (emojiPrefix) {
+      trimmed = `* ${trimmed.slice(emojiPrefix.length).trim()}`;
+      line = trimmed;
+    }
 
     // Classify content lines that need citation verification
     // — URGENT section: non-empty lines that aren't the header itself
@@ -51,8 +72,13 @@ function verifyCitations(briefText, allTweets) {
 
     if (!isUrgentItem && !isUrgentBullet && !isKeyBullet) return line;
 
-    // Must have at least one [Tx] citation
-    if (!/\[T\d+/.test(trimmed)) return null;
+    // Must have at least one citation-looking bracket, and every such
+    // bracket must be a clean [Tx] / [Tx,Ty] list — a malformed bracket
+    // (extra text after the tweet number) means the line is treated as
+    // uncited rather than having its numbers loosely extracted.
+    const bracketMatches = trimmed.match(/\[T\d+[^\]]*\]/g) || [];
+    if (bracketMatches.length === 0) return null;
+    if (bracketMatches.some(b => !CLEAN_CITE_RE.test(b))) return null;
 
     // Collect all cited tweet indices (1-based in prompt → 0-based in array)
     const indices = [...trimmed.matchAll(/T(\d+)/g)]
@@ -79,9 +105,10 @@ function verifyCitations(briefText, allTweets) {
     return verified ? line.replace(CITE_RE, '') : null;
   });
 
-  // Global safety net: strip any [Tx] tags that weren't caught per-line
-  return cleaned
-    .filter(l => l !== null)
+  // Global safety net: strip any [Tx] tags that weren't caught per-line,
+  // then drop any section header left with no content beneath it.
+  const withoutEmptyHeaders = removeEmptyHeaders(cleaned.filter(l => l !== null));
+  return withoutEmptyHeaders
     .join('\n')
     .replace(CITE_RE, '')
     .replace(/\n{3,}/g, '\n\n')
@@ -98,6 +125,63 @@ const SECTION_HEADERS = new Set([
   '📱 SOCIAL', 'UNCATEGORIZED INTEL',
 ]);
 
+// The model often appends a trailing colon to section headers even though
+// SECTION_HEADERS lists the bare form — match either.
+function isSectionHeaderLine(trimmedLine) {
+  return SECTION_HEADERS.has(trimmedLine) || SECTION_HEADERS.has(trimmedLine.replace(/:\s*$/, ''));
+}
+
+// Leading emoji of every SECTION_HEADERS entry that actually has one.
+// Excludes "UNCATEGORIZED INTEL" (no emoji) and "🚨" — shared by the
+// BREAKING header and legitimate 🚨 URGENT bullets, which must keep their
+// prefix rather than being rewritten to "*".
+const CATEGORY_EMOJIS = [...SECTION_HEADERS]
+  .map(header => header.split(' ')[0])
+  .filter(token => /[^\x00-\x7F]/.test(token) && token !== '🚨');
+
+/**
+ * Drops any section header line that has no non-blank, non-header content
+ * before the next header (or the end of the text) — enforces the prompt's
+ * "only output a section header if it has content" rule at the code level,
+ * since Gemini doesn't reliably follow it, especially once citation
+ * verification has stripped every bullet a header had.
+ */
+function removeEmptyHeaders(lines) {
+  const result = [];
+  for (let i = 0; i < lines.length; i++) {
+    const trimmed = lines[i].trim();
+    if (isSectionHeaderLine(trimmed)) {
+      let j = i + 1;
+      while (j < lines.length && lines[j].trim() === '') j++;
+      const nextTrimmed = j < lines.length ? lines[j].trim() : '';
+      const isEmpty = j >= lines.length
+        || isSectionHeaderLine(nextTrimmed)
+        || nextTrimmed.startsWith('KEY INTELLIGENCE')
+        || nextTrimmed.startsWith('🚨 URGENT DEVELOPMENTS');
+      if (isEmpty) continue;
+    }
+    result.push(lines[i]);
+  }
+  return result;
+}
+
+/**
+ * Splits a single brief's text into its individual story bullets, dropping
+ * blank lines and the "🚨 URGENT DEVELOPMENTS" / "KEY INTELLIGENCE" /
+ * category header lines — but keeping individual 🚨-prefixed URGENT items,
+ * which are real story content, not headers.
+ */
+function extractBullets(briefText) {
+  return String(briefText).split('\n')
+    .map(l => l.trim())
+    .filter(l =>
+      l.length > 0 &&
+      !l.startsWith('🚨 URGENT') &&
+      !l.startsWith('KEY INTELLIGENCE') &&
+      !isSectionHeaderLine(l)
+    );
+}
+
 /**
  * Builds a "do not repeat" section from recent brief history, as a flat list
  * of individual story bullets rather than full brief blocks — a narrative
@@ -111,16 +195,7 @@ const SECTION_HEADERS = new Set([
 function buildDeduplicationSection(recentBriefs) {
   if (!recentBriefs || recentBriefs.length === 0) return '';
 
-  const bullets = recentBriefs.flatMap(brief =>
-    String(brief).split('\n')
-      .map(l => l.trim())
-      .filter(l =>
-        l.length > 0 &&
-        !l.startsWith('🚨 URGENT') &&
-        !l.startsWith('KEY INTELLIGENCE') &&
-        !SECTION_HEADERS.has(l)
-      )
-  );
+  const bullets = recentBriefs.flatMap(extractBullets);
 
   if (bullets.length === 0) return '';
 
@@ -152,6 +227,13 @@ async function generateBrief(strippedBatches, { modelOverride, recentBriefs = []
     ...strippedBatches.tweets5,
   ];
 
+  // Most-recent-first: biases both the model's attention and the prompt's
+  // explicit recency instruction toward the freshest source when multiple
+  // tweets report conflicting values for the same metric (e.g. a commodity
+  // price). Sorted once, shared by buildPrompt (citation numbering) and
+  // verifyCitations (index lookup) so [Tx] tags line up with the same order.
+  allTweets.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
   const prompt = buildPrompt({ allTweets, currentUtcDatetime: new Date().toISOString(), recentBriefs });
 
   const resolvedModel = modelOverride || config.gemini.model;
@@ -166,7 +248,46 @@ async function generateBrief(strippedBatches, { modelOverride, recentBriefs = []
   const model = getGenAI().getGenerativeModel({ model: resolvedModel, generationConfig });
 
   const result = await model.generateContent(prompt);
-  return verifyCitations(result.response.text(), allTweets);
+  const verified = verifyCitations(result.response.text(), allTweets);
+  return dedupeAgainstRecentBriefs(verified, recentBriefs);
+}
+
+/**
+ * Code-level backstop for the prompt's STORY EXCLUSION LIST (see
+ * buildDeduplicationSection): drops any new bullet whose text is a
+ * near-duplicate (word-shingle Jaccard similarity) of a bullet already sent
+ * in a recent brief. The prompt instruction alone is unreliable — the model
+ * has an explicit escape hatch ("include again if a tweet words it
+ * differently") that lets genuinely-repeated stories slip through. Runs
+ * after verifyCitations so it compares the final, citation-verified bullet
+ * text. Re-runs removeEmptyHeaders() since dropping a bullet can leave its
+ * section header empty.
+ */
+function dedupeAgainstRecentBriefs(briefText, recentBriefs) {
+  const oldBullets = (recentBriefs || []).flatMap(extractBullets);
+  if (oldBullets.length === 0) return briefText;
+
+  const lines = briefText.split('\n');
+  const candidateBullets = lines
+    .map(l => l.trim())
+    .filter(t =>
+      t.length > 0 &&
+      !t.startsWith('🚨 URGENT') &&
+      !t.startsWith('KEY INTELLIGENCE') &&
+      !isSectionHeaderLine(t)
+    );
+  if (candidateBullets.length === 0) return briefText;
+
+  const { dropped } = dedupeBulletsAgainstText(candidateBullets, oldBullets, config.dedup.storyJaccardThreshold);
+  if (dropped.length === 0) return briefText;
+
+  for (const { bullet, matchedText, similarity } of dropped) {
+    console.log(`[${new Date().toISOString()}] Story dedup dropped (similarity ${similarity.toFixed(2)}): "${bullet.slice(0, 80)}" ~ "${matchedText.slice(0, 80)}"`);
+  }
+
+  const droppedSet = new Set(dropped.map(d => d.bullet));
+  const remaining = removeEmptyHeaders(lines.filter(l => !droppedSet.has(l.trim())));
+  return remaining.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
 function buildPrompt({ allTweets, currentUtcDatetime, recentBriefs = [] }) {
@@ -187,7 +308,7 @@ ${deduplicationSection}TIME FILTER: Process ONLY tweets timestamped within the p
 
 🔒 INTELLIGENCE RULES
 
-Grounding: Every fact must come directly from tweet text. No extrapolation. No hallucination. NEVER include a specific number — price, percentage, statistic, or figure — unless that exact number appears verbatim in a tweet. SPECIFICALLY FORBIDDEN: commodity settlement prices ("Brent Crude at $X.XX per barrel", "WTI at $X.XX") — these synthetic summaries are never in the tweet dataset.
+Grounding: Every fact must come directly from tweet text. No extrapolation. No hallucination. NEVER include a specific number — price, percentage, statistic, or figure — unless that exact number appears verbatim in a tweet. SPECIFICALLY FORBIDDEN: commodity settlement prices ("Brent Crude at $X.XX per barrel", "WTI at $X.XX") — these synthetic summaries are never in the tweet dataset. Tweets below are listed most-recent-first; when multiple tweets report different values for the same metric (e.g. a commodity price), use only the value from the most recently timestamped one.
 
 CITATION RULE (hard requirement): Every bullet and every 🚨 URGENT item must end with [Tx] or [Tx,Ty] citing the tweet number(s) from the list below that directly support the claim. Example: "* Iran deal signed, signing ceremony set for June 19. [T47,T79]". If no tweet clearly and directly supports a claim, omit the bullet. Never fabricate a citation. Bullets without a valid citation are stripped automatically before delivery — citation tags themselves are also stripped and will not appear in the final output.
 
@@ -239,4 +360,11 @@ TWEET DATA (${allTweets.length} tweets, numbered for citation):
 ${numberedTweets}`;
 }
 
-module.exports = { generateBrief, buildPrompt, buildDeduplicationSection, verifyCitations };
+module.exports = {
+  generateBrief,
+  buildPrompt,
+  buildDeduplicationSection,
+  verifyCitations,
+  extractBullets,
+  dedupeAgainstRecentBriefs,
+};

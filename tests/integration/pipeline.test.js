@@ -16,7 +16,7 @@ jest.mock('../../src/config', () => ({
   gemini: { apiKey: 'test-gemini-key', model: 'gemini-2.5-flash-lite' },
   telegram: { botToken: 'test-bot-token', chatId: '1304208404' },
   history: { maxEntries: 8 },
-  dedup: { shingleSize: 3, jaccardThreshold: 0.85 },
+  dedup: { shingleSize: 3, jaccardThreshold: 0.85, storyJaccardThreshold: 0.5 },
 }));
 
 const mockGetState = jest.fn(() => ({ lastRunAt: null, recentBriefs: [], recentTweets: [] }));
@@ -97,10 +97,13 @@ describe('Full pipeline integration', () => {
   });
 
   it('saves state with the generated brief text and tweet batches', async () => {
-    // Must cite tweet 1 from rawFixture and share ≥2 of its content words —
-    // verifyCitations strips any bullet that doesn't, and would otherwise
-    // silently turn this into an empty-string assertion.
-    const BRIEF = '* Israeli forces strike Hezbollah command center. [T1]';
+    // Must cite the "Israeli forces" tweet from rawFixture and share ≥2 of
+    // its content words — verifyCitations strips any bullet that doesn't,
+    // and would otherwise silently turn this into an empty-string assertion.
+    // It's [T3] (not [T1]) because generateBrief sorts tweets most-recent-
+    // first before numbering, and this fixture entry has the oldest
+    // createdAt of the three.
+    const BRIEF = '* Israeli forces strike Hezbollah command center. [T3]';
     mockGenerateContent.mockResolvedValue({ response: { text: () => BRIEF } });
     fetchMock.mockResponses(
       [twitterResp(rawFixture), { status: 200 }],

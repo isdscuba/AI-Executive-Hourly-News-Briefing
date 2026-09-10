@@ -9,9 +9,10 @@ jest.mock('@google/generative-ai', () => ({
 
 jest.mock('../../src/config', () => ({
   gemini: { apiKey: 'test-gemini-key', model: 'gemini-2.5-flash-lite' },
+  dedup: { shingleSize: 3, jaccardThreshold: 0.85, storyJaccardThreshold: 0.5 },
 }));
 
-const { generateBrief, buildPrompt, buildDeduplicationSection } = require('../../src/gemini');
+const { generateBrief, buildPrompt, buildDeduplicationSection, verifyCitations, extractBullets, dedupeAgainstRecentBriefs } = require('../../src/gemini');
 
 const BATCHES = {
   tweets1: [{ text: 'Tweet A', createdAt: 'Thu Apr 02 18:00:00 +0000 2026', author: 'userA' }],
@@ -152,5 +153,117 @@ describe('buildPrompt', () => {
   it('contains hard character limit constraint', () => {
     const prompt = buildPrompt({ ...base, recentBriefs: [] });
     expect(prompt).toContain('3,800 characters');
+  });
+
+  it('numbers tweets in the order given (caller is responsible for sorting)', () => {
+    const allTweets = [
+      { text: 'Older tweet', createdAt: '2026-03-31T16:00:00.000Z', author: 'a' },
+      { text: 'Newer tweet', createdAt: '2026-03-31T17:00:00.000Z', author: 'b' },
+    ];
+    const prompt = buildPrompt({ ...base, allTweets });
+    const olderIdx = prompt.indexOf('[T1]');
+    const newerIdx = prompt.indexOf('[T2]');
+    expect(prompt.slice(olderIdx, olderIdx + 60)).toContain('Older tweet');
+    expect(prompt.slice(newerIdx, newerIdx + 60)).toContain('Newer tweet');
+  });
+});
+
+describe('generateBrief — recency sort (issue 4)', () => {
+  it('sorts tweets most-recent-first before numbering, so [T1] is the newest tweet', async () => {
+    mockGenerateContent.mockResolvedValue({ response: { text: () => 'Generated' } });
+    const batches = {
+      tweets1: [{ text: 'Oldest tweet here', createdAt: '2026-03-31T15:00:00.000Z', author: 'a' }],
+      tweets2: [{ text: 'Newest tweet here', createdAt: '2026-03-31T17:00:00.000Z', author: 'b' }],
+      tweets3: [{ text: 'Middle tweet here', createdAt: '2026-03-31T16:00:00.000Z', author: 'c' }],
+      tweets4: [], tweets5: [],
+    };
+    await generateBrief(batches);
+    const [prompt] = mockGenerateContent.mock.calls[0];
+    const t1Idx = prompt.indexOf('[T1]');
+    const t2Idx = prompt.indexOf('[T2]');
+    const t3Idx = prompt.indexOf('[T3]');
+    expect(prompt.slice(t1Idx, t1Idx + 60)).toContain('Newest tweet here');
+    expect(prompt.slice(t2Idx, t2Idx + 60)).toContain('Middle tweet here');
+    expect(prompt.slice(t3Idx, t3Idx + 60)).toContain('Oldest tweet here');
+  });
+});
+
+describe('verifyCitations', () => {
+  it('normalizes an emoji-prefixed bullet to "*" and still verifies its citation', () => {
+    const brief = '🚨 URGENT DEVELOPMENTS\n\nKEY INTELLIGENCE:\n📈 MARKETS\n📈 Brent crude prices surged sharply overnight. [T1]';
+    const tweets = [{ text: 'Brent crude prices surged sharply overnight amid supply fears' }];
+    const result = verifyCitations(brief, tweets);
+    expect(result).toContain('* Brent crude prices surged sharply overnight.');
+    expect(result).not.toContain('📈 Brent crude');
+    expect(result).not.toContain('[T1]');
+    expect(result).toContain('📈 MARKETS');
+  });
+
+  it('drops a bullet with a malformed citation bracket entirely, even if the referenced tweets exist', () => {
+    const tweets = Array.from({ length: 61 }, (_, i) => ({ text: `filler tweet number ${i}` }));
+    tweets[23] = { text: 'Oil tankers seized near the strait by naval forces' };
+    tweets[59] = { text: 'Oil tankers seized near the strait confirmed by officials' };
+    const brief = '🚨 URGENT DEVELOPMENTS\n\nKEY INTELLIGENCE:\n📈 MARKETS\n* Oil tankers seized near strait. [T60 - duplicate context with T24 context, but specific locations mentioned]';
+    const result = verifyCitations(brief, tweets);
+    expect(result).not.toContain('Oil tankers seized near strait');
+    expect(result).not.toContain('T60');
+    expect(result).not.toContain('T24');
+  });
+
+  it('drops a section header immediately followed by another header, keeps one with content', () => {
+    const brief = '🚨 URGENT DEVELOPMENTS\n\nKEY INTELLIGENCE:\n🚨 BREAKING\n📈 MARKETS\n* Something happened here today. [T1]';
+    const tweets = [{ text: 'Something happened here today confirmed by officials' }];
+    const result = verifyCitations(brief, tweets);
+    expect(result).not.toContain('BREAKING');
+    expect(result).toContain('📈 MARKETS');
+    expect(result).toContain('Something happened here today.');
+  });
+
+  it('drops a header that becomes empty only after its sole bullet fails citation verification', () => {
+    const brief = '🚨 URGENT DEVELOPMENTS\n\nKEY INTELLIGENCE:\n🛡️ SECURITY\n* Uncited claim about something happening.\n📈 MARKETS\n* Verified market fact happened today. [T1]';
+    const tweets = [{ text: 'Verified market fact happened today confirmed by officials' }];
+    const result = verifyCitations(brief, tweets);
+    expect(result).not.toContain('SECURITY');
+    expect(result).not.toContain('Uncited claim');
+    expect(result).toContain('📈 MARKETS');
+    expect(result).toContain('Verified market fact happened today.');
+  });
+
+  it('keeps a header that has surviving content', () => {
+    const brief = '🚨 URGENT DEVELOPMENTS\n\nKEY INTELLIGENCE:\n📈 MARKETS\n* Verified market fact happened today. [T1]';
+    const tweets = [{ text: 'Verified market fact happened today confirmed by officials' }];
+    const result = verifyCitations(brief, tweets);
+    expect(result).toContain('📈 MARKETS');
+    expect(result).toContain('Verified market fact happened today.');
+  });
+});
+
+describe('extractBullets', () => {
+  it('excludes header lines (with or without a trailing colon) but keeps urgent and key bullets', () => {
+    const brief = '🚨 URGENT DEVELOPMENTS\n🚨 Story one. [T1]\n\nKEY INTELLIGENCE:\n📈 MARKETS:\n* Story two. [T2]';
+    expect(extractBullets(brief)).toEqual(['🚨 Story one. [T1]', '* Story two. [T2]']);
+  });
+});
+
+describe('dedupeAgainstRecentBriefs (issue 3)', () => {
+  it('drops a new bullet that paraphrases a story from a recent brief', () => {
+    const recentBriefs = ['🚨 URGENT DEVELOPMENTS\n🚨 Houthi forces seized the strategic port city of Mocha in Yemen. [T1]'];
+    const newBrief = '🚨 URGENT DEVELOPMENTS\n🚨 Houthi forces have seized the strategic port city of Mocha in Yemen.\n\nKEY INTELLIGENCE:\n📈 MARKETS\n* Brent crude rose above one hundred seven dollars a barrel.';
+    const result = dedupeAgainstRecentBriefs(newBrief, recentBriefs);
+    expect(result).not.toContain('Houthi');
+    expect(result).toContain('Brent crude rose above one hundred seven dollars a barrel.');
+  });
+
+  it('keeps everything when there are no recent briefs', () => {
+    const newBrief = '🚨 URGENT DEVELOPMENTS\n🚨 A brand new story just broke.';
+    expect(dedupeAgainstRecentBriefs(newBrief, [])).toBe(newBrief);
+  });
+
+  it('removes a header left empty by a dropped bullet', () => {
+    const recentBriefs = ['🚨 URGENT DEVELOPMENTS\n\nKEY INTELLIGENCE:\n🛡️ SECURITY\n* Houthi forces seized the strategic port city of Mocha in Yemen.'];
+    const newBrief = '🚨 URGENT DEVELOPMENTS\n\nKEY INTELLIGENCE:\n🛡️ SECURITY\n* Houthi forces have seized the strategic port city of Mocha in Yemen.\n📈 MARKETS\n* Brent crude rose above one hundred seven dollars a barrel.';
+    const result = dedupeAgainstRecentBriefs(newBrief, recentBriefs);
+    expect(result).not.toContain('SECURITY');
+    expect(result).toContain('📈 MARKETS');
   });
 });

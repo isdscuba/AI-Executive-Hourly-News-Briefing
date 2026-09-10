@@ -172,4 +172,65 @@ function dedupeTweetPool(tweets, { against = [], threshold = config.dedup.jaccar
   return { kept, idDropped, urlDropped, exactDropped, nearDupDropped, nearMisses };
 }
 
-module.exports = { normalizeTweetText, shingles, jaccardSimilarity, canonicalizeUrl, dedupeTweetPool };
+/**
+ * Dedupes a flat list of new brief bullets against bullets already sent in
+ * recent briefs, using the same word-shingle Jaccard similarity as
+ * dedupeTweetPool — but bullets are condensed, paraphrased sentences rather
+ * than raw tweet text, so callers should pass a looser threshold (see
+ * config.dedup.storyJaccardThreshold) than the raw-tweet jaccardThreshold.
+ *
+ * Unlike dedupeTweetPool this has no id/URL passes (bullets don't carry
+ * either) — it's pure text-similarity, first-match-wins.
+ *
+ * @param {string[]} newBullets - bullets from the brief just generated
+ * @param {string[]} oldBullets - bullets from recent prior briefs
+ * @param {number} [threshold] - Jaccard threshold, defaults to config.dedup.storyJaccardThreshold
+ * @returns {{ kept: string[], dropped: Array<{ bullet: string, matchedText: string, similarity: number }> }}
+ */
+function dedupeBulletsAgainstText(newBullets, oldBullets, threshold = config.dedup.storyJaccardThreshold) {
+  const oldShingles = (oldBullets || [])
+    .map(normalizeTweetText)
+    .filter(Boolean)
+    .map(normalized => ({ normalized, shingleSet: shingles(normalized) }));
+
+  const kept = [];
+  const dropped = [];
+
+  for (const bullet of newBullets || []) {
+    const normalized = normalizeTweetText(bullet);
+    if (!normalized) {
+      kept.push(bullet);
+      continue;
+    }
+
+    const bulletShingles = shingles(normalized);
+    let matched = null;
+    let bestSimilarity = 0;
+
+    for (const seen of oldShingles) {
+      const similarity = jaccardSimilarity(bulletShingles, seen.shingleSet);
+      if (similarity > bestSimilarity) {
+        bestSimilarity = similarity;
+        matched = seen;
+      }
+    }
+
+    if (matched && bestSimilarity >= threshold) {
+      dropped.push({ bullet, matchedText: matched.normalized, similarity: bestSimilarity });
+      continue;
+    }
+
+    kept.push(bullet);
+  }
+
+  return { kept, dropped };
+}
+
+module.exports = {
+  normalizeTweetText,
+  shingles,
+  jaccardSimilarity,
+  canonicalizeUrl,
+  dedupeTweetPool,
+  dedupeBulletsAgainstText,
+};

@@ -44,6 +44,11 @@ const config = {
     // slip through) rather than over-collapsing (a real story update
     // gets mistaken for a duplicate of the earlier tweet).
     jaccardThreshold: 0.85,
+    // Looser than jaccardThreshold on purpose: this compares condensed,
+    // paraphrased one-sentence brief bullets across runs, not near-identical
+    // raw tweet text — the same story reworded by the model has much lower
+    // shingle overlap than two near-duplicate tweets ever would.
+    storyJaccardThreshold: 0.5,
   },
 };
 
