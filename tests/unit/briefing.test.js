@@ -295,3 +295,17 @@ describe('runBriefingPipeline — resilience', () => {
     await expect(runBriefingPipeline()).resolves.toBeUndefined();
   });
 });
+
+describe('capBrief', () => {
+  const { capBrief } = require('../../src/briefing');
+
+  it('returns short text unchanged', () => {
+    expect(capBrief('hello there', 100)).toBe('hello there');
+  });
+
+  it('cuts at a line boundary and drops a dangling header', () => {
+    const text = 'First story is complete here.\n\n📈 MARKETS:\n\nSecond story that gets cut mid sentence';
+    const out = capBrief(text, 50);
+    expect(out).toBe('First story is complete here.');
+  });
+});

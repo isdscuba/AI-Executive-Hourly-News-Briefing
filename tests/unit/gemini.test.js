@@ -276,3 +276,12 @@ describe('dedupeAgainstRecentBriefs (issue 3)', () => {
     expect(result).toContain('📈 MARKETS');
   });
 });
+
+describe('dedupeAgainstRecentBriefs — within-brief duplicates', () => {
+  it('drops the second copy of a story repeated inside one brief, even with no history', () => {
+    const brief = '🚨 URGENT DEVELOPMENTS:\n\nHouthi rebels struck a government military camp in southern Yemen today.\n\nKEY INTELLIGENCE:\n\n🛡️ SECURITY:\n\nHouthi rebels struck a government military camp in southern Yemen today.\n\nRussia launched drones at Kyiv overnight.';
+    const out = dedupeAgainstRecentBriefs(brief, []);
+    expect(out.match(/Houthi rebels struck/g)).toHaveLength(1);
+    expect(out).toContain('Russia launched drones');
+  });
+});

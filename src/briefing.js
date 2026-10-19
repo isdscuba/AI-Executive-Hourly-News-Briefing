@@ -1,5 +1,8 @@
 'use strict';
 
+const fs = require('fs');
+const path = require('path');
+
 const { fetchAllTweets } = require('./twitter');
 const { stripAllBatches } = require('./transform');
 const { getState, saveState } = require('./state');
@@ -103,6 +106,34 @@ function dedupeAgainstRecentTweets(filteredBatches, recentTweets) {
 // "KEY INTELLIGENCE:", "🚨 URGENT DEVELOPMENTS:") are all caps.
 function hasStoryContent(briefText) {
   return String(briefText).split('\n').some(l => /[a-z]/.test(l));
+}
+
+/**
+ * Caps a brief at maxChars without cutting a story mid-sentence: cuts back to
+ * the last line break within the limit, then removes any section header left
+ * dangling at the end.
+ */
+function capBrief(text, maxChars) {
+  if (text.length <= maxChars) return text;
+  const cut = text.slice(0, maxChars);
+  const lines = cut.slice(0, cut.lastIndexOf('\n') + 1 || maxChars).split('\n');
+  // Drop trailing blank lines and header lines (headers are all caps)
+  while (lines.length > 0 && !/[a-z]/.test(lines[lines.length - 1])) lines.pop();
+  return lines.join('\n').trim();
+}
+
+// Append-only record of every brief actually sent, kept outside data/ so
+// reviews of duplicate/quality issues don't depend on state.json.
+const SENT_LOG = process.env.EXEC_NEWS_SENT_LOG
+  || path.join(process.env.HOME || '/tmp', 'Library/Logs/exec-briefing/sent-briefs.jsonl');
+
+function recordSentBrief(text, messageId) {
+  try {
+    fs.mkdirSync(path.dirname(SENT_LOG), { recursive: true });
+    fs.appendFileSync(SENT_LOG, JSON.stringify({ sentAt: new Date().toISOString(), messageId, text }) + '\n');
+  } catch (err) {
+    log(`Sent-brief log failed (continuing): ${err.message}`);
+  }
 }
 
 /**
@@ -214,7 +245,7 @@ async function runBriefingPipeline({ isOpeningBrief = false } = {}) {
 
   // Hard-cap brief at 3800 chars so oversized outputs don't bloat the
   // story exclusion list passed to the next run.
-  const cappedBrief = briefText.length > 3800 ? briefText.substring(0, 3800) : briefText;
+  const cappedBrief = capBrief(briefText, 3800);
   if (cappedBrief.length < briefText.length) {
     log(`Brief truncated from ${briefText.length} to ${cappedBrief.length} chars (hard cap)`);
   }
@@ -239,6 +270,7 @@ async function runBriefingPipeline({ isOpeningBrief = false } = {}) {
   try {
     const tgResult = await sendTelegram(cappedBrief);
     log(`Telegram OK (message_id: ${tgResult?.result?.message_id})`);
+    recordSentBrief(cappedBrief, tgResult?.result?.message_id);
   } catch (err) {
     log(`Telegram failed: ${err.message}. Continuing to save state.`);
   }
@@ -252,4 +284,4 @@ async function runBriefingPipeline({ isOpeningBrief = false } = {}) {
   }
 }
 
-module.exports = { runBriefingPipeline, filterNewTweets, getMidnightEtUtc, dedupeAgainstRecentTweets };
+module.exports = { capBrief, runBriefingPipeline, filterNewTweets, getMidnightEtUtc, dedupeAgainstRecentTweets };

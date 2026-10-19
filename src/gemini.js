@@ -270,28 +270,47 @@ async function generateBrief(strippedBatches, { modelOverride, recentBriefs = []
  */
 function dedupeAgainstRecentBriefs(briefText, recentBriefs) {
   const oldBullets = (recentBriefs || []).flatMap(extractBullets);
-  if (oldBullets.length === 0) return briefText;
 
   const lines = briefText.split('\n');
-  const candidateBullets = lines
-    .map(l => l.trim())
-    .filter(t =>
+  // Indices into `lines` of story-bullet lines (not blanks or headers).
+  // Dropping is by line index, not text, so an exact within-brief repeat
+  // removes only the later copy.
+  const candidateIdx = lines
+    .map((l, i) => ({ t: l.trim(), i }))
+    .filter(({ t }) =>
       t.length > 0 &&
       !t.startsWith('🚨 URGENT') &&
       !t.startsWith('KEY INTELLIGENCE') &&
       !isSectionHeaderLine(t)
-    );
-  if (candidateBullets.length === 0) return briefText;
+    )
+    .map(({ i }) => i);
+  if (candidateIdx.length === 0) return briefText;
 
-  const { dropped } = dedupeBulletsAgainstText(candidateBullets, oldBullets, config.dedup.storyJaccardThreshold);
-  if (dropped.length === 0) return briefText;
+  const threshold = config.dedup.storyJaccardThreshold;
+  const droppedIdx = new Set();
+  const report = ({ bullet, matchedText, similarity }, idx, scope) => {
+    console.log(`[${new Date().toISOString()}] Story dedup dropped${scope} (similarity ${similarity.toFixed(2)}): "${bullet.slice(0, 80)}" ~ "${matchedText.slice(0, 80)}"`);
+    droppedIdx.add(idx);
+  };
 
-  for (const { bullet, matchedText, similarity } of dropped) {
-    console.log(`[${new Date().toISOString()}] Story dedup dropped (similarity ${similarity.toFixed(2)}): "${bullet.slice(0, 80)}" ~ "${matchedText.slice(0, 80)}"`);
+  const seen = [];
+  for (const idx of candidateIdx) {
+    const bullet = lines[idx].trim();
+    // Against stories already sent in recent briefs.
+    if (oldBullets.length > 0) {
+      const { dropped } = dedupeBulletsAgainstText([bullet], oldBullets, threshold);
+      if (dropped.length > 0) { report(dropped[0], idx, ''); continue; }
+    }
+    // Against earlier bullets in this same brief — the model sometimes emits
+    // one story twice (e.g. once per section) in a single output.
+    const { dropped: dup } = dedupeBulletsAgainstText([bullet], seen, threshold);
+    if (dup.length > 0) { report(dup[0], idx, ' (within brief)'); continue; }
+    seen.push(bullet);
   }
 
-  const droppedSet = new Set(dropped.map(d => d.bullet));
-  const remaining = removeEmptyHeaders(lines.filter(l => !droppedSet.has(l.trim())));
+  if (droppedIdx.size === 0) return briefText;
+
+  const remaining = removeEmptyHeaders(lines.filter((_, i) => !droppedIdx.has(i)));
   return remaining.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
