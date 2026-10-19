@@ -37,13 +37,14 @@ function verifyCitations(briefText, allTweets) {
   const CLEAN_CITE_RE = /^\[T\d+(?:,\s*T\d+)*\]$/;
 
   let inUrgentSection = false;
+  let inKeySection = false;
   const lines = briefText.split('\n');
   const cleaned = lines.map(line => {
     let trimmed = line.trim();
 
     // Track which section we're in so plain-text URGENT items are detected
     if (trimmed.startsWith('🚨 URGENT DEVELOPMENTS')) { inUrgentSection = true; return line; }
-    if (trimmed.startsWith('KEY INTELLIGENCE'))        { inUrgentSection = false; return line; }
+    if (trimmed.startsWith('KEY INTELLIGENCE'))        { inUrgentSection = false; inKeySection = true; return line; }
 
     // Section header lines pass through untouched here — emptiness is
     // resolved by removeEmptyHeaders() below, once the final bullet set
@@ -68,7 +69,11 @@ function verifyCitations(briefText, allTweets) {
     const isUrgentBullet = /^🚨/.test(trimmed)
       && !trimmed.startsWith('🚨 URGENT DEVELOPMENTS')
       && !trimmed.startsWith('🚨 BREAKING');
-    const isKeyBullet    = trimmed.startsWith('*');
+    // Any non-blank line under KEY INTELLIGENCE is story content, "*" or not.
+    // Gemini sometimes drops the "*" (and echoes the exclusion list with a
+    // fake "[STORY EXCLUSION LIST]" tag instead of a [Tx] citation); lines
+    // like that previously skipped verification and shipped unchecked.
+    const isKeyBullet    = trimmed.startsWith('*') || (inKeySection && trimmed.length > 0);
 
     if (!isUrgentItem && !isUrgentBullet && !isKeyBullet) return line;
 
@@ -173,7 +178,7 @@ function removeEmptyHeaders(lines) {
  */
 function extractBullets(briefText) {
   return String(briefText).split('\n')
-    .map(l => l.trim())
+    .map(l => l.trim().replace(/\s*\[STORY EXCLUSION LIST\]/g, ''))
     .filter(l =>
       l.length > 0 &&
       !l.startsWith('🚨 URGENT') &&
@@ -202,7 +207,7 @@ function buildDeduplicationSection(recentBriefs) {
   const bulletList = bullets.map(b => `- ${b}`).join('\n');
   const n = recentBriefs.length;
 
-  return `STORY EXCLUSION LIST — these stories were already reported in the last ${n} brief${n > 1 ? 's' : ''}. Do NOT include any story whose actor + core fact matches an item below, even if a new tweet words it differently. Only include it again if a tweet in the current dataset adds a materially new data point: a new named casualty count, a new confirmed statistic, a new location, or a confirmed escalation. Restatements and updates-without-new-facts must be skipped entirely.
+  return `STORY EXCLUSION LIST — these stories were already reported in the last ${n} brief${n > 1 ? 's' : ''}. Do NOT include any story whose actor + core fact matches an item below, even if a new tweet words it differently. Only include it again if a tweet in the current dataset adds a materially new data point: a new named casualty count, a new confirmed statistic, a new location, or a confirmed escalation. Restatements and updates-without-new-facts must be skipped entirely. This list is NOT a source of facts: never copy, repeat, or cite any item from it. If nothing in the current tweets is new, output only the two section headings.
 ${bulletList}
 
 `;

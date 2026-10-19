@@ -79,7 +79,7 @@ function saveState(briefText, tweetBatches) {
   }
 
   const existing = getState();
-  const recentBriefs = [briefText, ...existing.recentBriefs].slice(0, config.history.maxEntries);
+  const recentBriefs = (briefText ? [briefText, ...existing.recentBriefs] : existing.recentBriefs).slice(0, config.history.maxEntries);
   const recentTweets = [tweetBatches, ...existing.recentTweets].slice(0, config.history.maxEntries);
 
   fs.writeFileSync(TMP_FILE, JSON.stringify({

@@ -99,6 +99,12 @@ function dedupeAgainstRecentTweets(filteredBatches, recentTweets) {
   return result;
 }
 
+// Story lines contain lowercase letters; section headers ("📈 MARKETS:",
+// "KEY INTELLIGENCE:", "🚨 URGENT DEVELOPMENTS:") are all caps.
+function hasStoryContent(briefText) {
+  return String(briefText).split('\n').some(l => /[a-z]/.test(l));
+}
+
 /**
  * Main pipeline.
  *
@@ -211,6 +217,21 @@ async function runBriefingPipeline({ isOpeningBrief = false } = {}) {
   const cappedBrief = briefText.length > 3800 ? briefText.substring(0, 3800) : briefText;
   if (cappedBrief.length < briefText.length) {
     log(`Brief truncated from ${briefText.length} to ${cappedBrief.length} chars (hard cap)`);
+  }
+
+  // Step 6b: Never ship a brief with no stories (just the empty
+  // "URGENT DEVELOPMENTS / KEY INTELLIGENCE" shell). This happens when every
+  // bullet was stripped by citation verification or story dedup. Still save
+  // the tweets so the next run doesn't reprocess them, but keep the empty
+  // shell out of the story exclusion history.
+  if (!hasStoryContent(cappedBrief)) {
+    log('Brief has no verified stories after filtering — not sending to Telegram');
+    try {
+      saveState('', newTweets);
+    } catch (err) {
+      log(`State save failed: ${err.message}. Next run will reprocess tweets.`);
+    }
+    return;
   }
 
   // Step 7: Send to Telegram

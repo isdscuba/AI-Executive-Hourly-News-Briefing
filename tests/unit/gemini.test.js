@@ -189,6 +189,15 @@ describe('generateBrief — recency sort (issue 4)', () => {
 });
 
 describe('verifyCitations', () => {
+  it('verifies un-starred lines under KEY INTELLIGENCE and drops echoed exclusion-list lines', () => {
+    const brief = '🚨 URGENT DEVELOPMENTS:\n\nKEY INTELLIGENCE:\n\n🛡️ SECURITY:\n\nThe IDF is on high alert across all sectors today. [STORY EXCLUSION LIST]\n\nSomething happened here today. [T1]';
+    const tweets = [{ text: 'Something happened here today confirmed by officials' }];
+    const result = verifyCitations(brief, tweets);
+    expect(result).not.toContain('IDF');
+    expect(result).not.toContain('STORY EXCLUSION LIST');
+    expect(result).toContain('Something happened here today.');
+  });
+
   it('normalizes an emoji-prefixed bullet to "*" and still verifies its citation', () => {
     const brief = '🚨 URGENT DEVELOPMENTS\n\nKEY INTELLIGENCE:\n📈 MARKETS\n📈 Brent crude prices surged sharply overnight. [T1]';
     const tweets = [{ text: 'Brent crude prices surged sharply overnight amid supply fears' }];

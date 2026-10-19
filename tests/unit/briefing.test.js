@@ -210,6 +210,17 @@ describe('runBriefingPipeline — happy path', () => {
   });
 });
 
+describe('runBriefingPipeline — empty brief', () => {
+  beforeEach(() => setupHappyPath());
+
+  it('does not send a header-only brief to Telegram, but still saves tweets without it as history', async () => {
+    generateBrief.mockResolvedValue('🚨 URGENT DEVELOPMENTS:\n\nKEY INTELLIGENCE:');
+    await runBriefingPipeline();
+    expect(sendTelegram).not.toHaveBeenCalled();
+    expect(saveState).toHaveBeenCalledWith('', expect.any(Object));
+  });
+});
+
 describe('runBriefingPipeline — tweet filtering', () => {
   it('skips run when all tweets are older than lastRunAt', async () => {
     fetchAllTweets.mockResolvedValue(MOCK_RAW);
