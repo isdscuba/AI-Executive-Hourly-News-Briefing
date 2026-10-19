@@ -4,7 +4,10 @@ const fs = require('fs');
 const path = require('path');
 const config = require('./config');
 
-const STATE_FILE = path.join(__dirname, '..', 'data', 'state.json');
+// EXEC_NEWS_DATA_DIR lets tests point at a scratch dir; without it the unit
+// tests' cleanup deleted the live data/state.json (and its .bak).
+const DATA_DIR = process.env.EXEC_NEWS_DATA_DIR || path.join(__dirname, '..', 'data');
+const STATE_FILE = path.join(DATA_DIR, 'state.json');
 const BACKUP_FILE = `${STATE_FILE}.bak`;
 const TMP_FILE = `${STATE_FILE}.tmp`;
 

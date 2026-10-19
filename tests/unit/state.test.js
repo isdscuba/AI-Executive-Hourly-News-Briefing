@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const config = require('../../src/config');
 
-const STATE_FILE = path.join(__dirname, '..', '..', 'data', 'state.json');
+const STATE_FILE = path.join(process.env.EXEC_NEWS_DATA_DIR, 'state.json');
 const BACKUP_FILE = `${STATE_FILE}.bak`;
 const TMP_FILE = `${STATE_FILE}.tmp`;
 const MAX_HISTORY = config.history.maxEntries;
