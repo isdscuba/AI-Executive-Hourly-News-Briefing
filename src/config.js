@@ -49,6 +49,11 @@ const config = {
     // raw tweet text — the same story reworded by the model has much lower
     // shingle overlap than two near-duplicate tweets ever would.
     storyJaccardThreshold: 0.5,
+    // Content-word overlap (share of the shorter bullet's content words found
+    // in the other), for reworded copies that shingle-Jaccard misses. Stricter
+    // across briefs so genuine updates to a running story still get through.
+    withinBriefOverlap: 0.6,
+    crossBriefOverlap: 0.8,
   },
 };
 

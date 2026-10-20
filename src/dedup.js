@@ -34,6 +34,44 @@ function shingles(normalizedText, k = config.dedup.shingleSize) {
   return result;
 }
 
+const CONTENT_STOPWORDS = new Set([
+  'the','and','for','with','from','that','this','these','those','its','their','after','before',
+  'about','into','over','under','between','during','against','including','following','within',
+  'without','according','because','there','where','when','which','what','who','how','only',
+  'said','says','say','told','claim','claims','claimed','report','reports','reported','reportedly',
+  'amid','will','would','could','should','have','has','had','been','being','were','was','are',
+  'also','more','most','than','then','such','some','other',
+]);
+
+function contentWordSet(text) {
+  return new Set(
+    normalizeTweetText(text).split(' ').filter(w => w.length > 3 && !CONTENT_STOPWORDS.has(w))
+  );
+}
+
+function numberTokens(text) {
+  return new Set((String(text).match(/\d[\d,.]*\d|\d/g) || []).map(n => n.replace(/,/g, '')));
+}
+
+/**
+ * True when two story bullets read as the same story reworded: the smaller
+ * bullet's content words are >= threshold covered by the other. Bullets that
+ * both carry numbers but disagree on them are different facts (e.g. successive
+ * API stock-change or futures-settlement lines), so they never match.
+ */
+function sameStoryByContentWords(a, b, threshold) {
+  const na = numberTokens(a);
+  const nb = numberTokens(b);
+  if (na.size > 0 && nb.size > 0 && ![...na].some(n => nb.has(n))) return false;
+  const wa = contentWordSet(a);
+  const wb = contentWordSet(b);
+  const [small, big] = wa.size <= wb.size ? [wa, wb] : [wb, wa];
+  if (small.size < 4) return false;
+  let shared = 0;
+  for (const w of small) if (big.has(w)) shared++;
+  return shared / small.size >= threshold;
+}
+
 /**
  * Jaccard similarity between two shingle sets: |intersection| / |union|.
  */
@@ -187,11 +225,11 @@ function dedupeTweetPool(tweets, { against = [], threshold = config.dedup.jaccar
  * @param {number} [threshold] - Jaccard threshold, defaults to config.dedup.storyJaccardThreshold
  * @returns {{ kept: string[], dropped: Array<{ bullet: string, matchedText: string, similarity: number }> }}
  */
-function dedupeBulletsAgainstText(newBullets, oldBullets, threshold = config.dedup.storyJaccardThreshold) {
+function dedupeBulletsAgainstText(newBullets, oldBullets, threshold = config.dedup.storyJaccardThreshold, overlapThreshold = null) {
   const oldShingles = (oldBullets || [])
-    .map(normalizeTweetText)
-    .filter(Boolean)
-    .map(normalized => ({ normalized, shingleSet: shingles(normalized) }));
+    .map(raw => ({ raw, normalized: normalizeTweetText(raw) }))
+    .filter(o => o.normalized)
+    .map(o => ({ ...o, shingleSet: shingles(o.normalized) }));
 
   const kept = [];
   const dropped = [];
@@ -208,7 +246,13 @@ function dedupeBulletsAgainstText(newBullets, oldBullets, threshold = config.ded
     let bestSimilarity = 0;
 
     for (const seen of oldShingles) {
-      const similarity = jaccardSimilarity(bulletShingles, seen.shingleSet);
+      let similarity = jaccardSimilarity(bulletShingles, seen.shingleSet);
+      // Reworded copies of one story score very low on word-shingles, so also
+      // compare content-word overlap when the caller supplies a threshold.
+      if (overlapThreshold != null && similarity < threshold
+          && sameStoryByContentWords(bullet, seen.raw, overlapThreshold)) {
+        similarity = Math.max(similarity, threshold);
+      }
       if (similarity > bestSimilarity) {
         bestSimilarity = similarity;
         matched = seen;
@@ -233,4 +277,5 @@ module.exports = {
   canonicalizeUrl,
   dedupeTweetPool,
   dedupeBulletsAgainstText,
+  sameStoryByContentWords,
 };

@@ -9,7 +9,7 @@ jest.mock('@google/generative-ai', () => ({
 
 jest.mock('../../src/config', () => ({
   gemini: { apiKey: 'test-gemini-key', model: 'gemini-2.5-flash-lite' },
-  dedup: { shingleSize: 3, jaccardThreshold: 0.85, storyJaccardThreshold: 0.5 },
+  dedup: { shingleSize: 3, jaccardThreshold: 0.85, storyJaccardThreshold: 0.5, withinBriefOverlap: 0.6, crossBriefOverlap: 0.8 },
 }));
 
 const { generateBrief, buildPrompt, buildDeduplicationSection, verifyCitations, extractBullets, dedupeAgainstRecentBriefs } = require('../../src/gemini');
@@ -283,5 +283,68 @@ describe('dedupeAgainstRecentBriefs — within-brief duplicates', () => {
     const out = dedupeAgainstRecentBriefs(brief, []);
     expect(out.match(/Houthi rebels struck/g)).toHaveLength(1);
     expect(out).toContain('Russia launched drones');
+  });
+});
+
+describe('reworded duplicates and empty URGENT header (2026-10-20 review)', () => {
+  test('within-brief: drops a reworded copy of the same story', () => {
+    const brief = [
+      '🚨 URGENT DEVELOPMENTS:',
+      '🚨 Revolut outage disrupts payments and transfers for users globally across 38 countries.',
+      '',
+      'KEY INTELLIGENCE:',
+      '',
+      '🚨 BREAKING:',
+      '* Revolut experienced a global outage affecting payments and transfers in 38 countries.',
+      '* A suspect arrested in France for arson at Limoges City Hall is linked to far-left movements.',
+      '',
+      '⚖️ JUSTICE:',
+      '* A suspect was arrested in France over the arson of Limoges City Hall, linked to far-left movements.',
+    ].join('\n');
+    const out = dedupeAgainstRecentBriefs(brief, []);
+    expect(out.match(/Revolut/g)).toHaveLength(1);
+    expect(out.match(/Limoges/g)).toHaveLength(1);
+    expect(out).not.toContain('JUSTICE');
+  });
+
+  test('within-brief: keeps same-template bullets with different numbers', () => {
+    const brief = [
+      'KEY INTELLIGENCE:',
+      '⚡ ENERGY:',
+      '* US API crude stock changes reported a decrease of 4.93 million barrels.',
+      '* US API distillate stock changes reported a decrease of 2.6 million barrels.',
+      '* US API gasoline stock changes reported a decrease of 2.577 million barrels.',
+    ].join('\n');
+    expect(dedupeAgainstRecentBriefs(brief, [])).toBe(brief);
+  });
+
+  test('cross-brief: drops a reworded repeat but keeps a genuine escalation', () => {
+    const prior = ['* The UK will fly defensive missions to protect Saudi Arabia from Houthi attacks.',
+      '* Two oil tankers struck mines south of the Strait of Hormuz, halting operations.'];
+    const brief = [
+      'KEY INTELLIGENCE:',
+      '🛡️ SECURITY:',
+      '* UK Typhoon jets will provide defensive missions to protect Saudi Arabia from Houthi attacks.',
+      '* IRGC Navy reports a supertanker carrying 2 million barrels exploded after hitting a sea mine.',
+    ].join('\n');
+    const out = dedupeAgainstRecentBriefs(brief, prior);
+    expect(out).not.toContain('Typhoon');
+    expect(out).toContain('supertanker');
+  });
+
+  test('verifyCitations: drops an URGENT header with no urgent items under it', () => {
+    const raw = ['🚨 URGENT DEVELOPMENTS:', '', 'KEY INTELLIGENCE:', '', '📈 MARKETS:',
+      '* Brent crude rose past one hundred dollars today in Asian trading. [T1]'].join('\n');
+    const tweets = [{ text: 'Brent crude rose past one hundred dollars today in Asian trading', createdAt: new Date().toISOString(), author: 'x' }];
+    const out = verifyCitations(raw, tweets);
+    expect(out).not.toContain('URGENT');
+    expect(out).toContain('KEY INTELLIGENCE');
+    expect(out).toContain('Brent');
+  });
+
+  test('verifyCitations: keeps URGENT header when it has items', () => {
+    const raw = ['🚨 URGENT DEVELOPMENTS:', '🚨 Strike killed twenty people at a market in the northern region. [T1]'].join('\n');
+    const tweets = [{ text: 'Strike killed twenty people at a market in the northern region', createdAt: new Date().toISOString(), author: 'x' }];
+    expect(verifyCitations(raw, tweets)).toContain('🚨 URGENT DEVELOPMENTS:');
   });
 });

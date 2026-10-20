@@ -124,7 +124,7 @@ function verifyCitations(briefText, allTweets) {
 // OUTPUT FORMAT section) — matched by exact text, NOT by leading emoji, because
 // individual 🚨 URGENT bullets also start with 🚨 and must NOT be filtered out.
 const SECTION_HEADERS = new Set([
-  '🚨 BREAKING', '📈 MARKETS', '🏛️ POLITICS', '🛡️ SECURITY', '🌍 INTERNATIONAL',
+  '🚨 URGENT DEVELOPMENTS', '🚨 BREAKING', '📈 MARKETS', '🏛️ POLITICS', '🛡️ SECURITY', '🌍 INTERNATIONAL',
   '⚖️ JUSTICE', '💼 BUSINESS', '📊 DATA', '🎯 INTEL', '🌡️ CLIMATE', '💊 HEALTH',
   '⚡ ENERGY', '🏗️ INFRASTRUCTURE', '🚗 TECHNOLOGY', '💰 CRYPTO', '🏠 HOUSING',
   '📱 SOCIAL', 'UNCATEGORIZED INTEL',
@@ -298,12 +298,12 @@ function dedupeAgainstRecentBriefs(briefText, recentBriefs) {
     const bullet = lines[idx].trim();
     // Against stories already sent in recent briefs.
     if (oldBullets.length > 0) {
-      const { dropped } = dedupeBulletsAgainstText([bullet], oldBullets, threshold);
+      const { dropped } = dedupeBulletsAgainstText([bullet], oldBullets, threshold, config.dedup.crossBriefOverlap);
       if (dropped.length > 0) { report(dropped[0], idx, ''); continue; }
     }
     // Against earlier bullets in this same brief — the model sometimes emits
     // one story twice (e.g. once per section) in a single output.
-    const { dropped: dup } = dedupeBulletsAgainstText([bullet], seen, threshold);
+    const { dropped: dup } = dedupeBulletsAgainstText([bullet], seen, threshold, config.dedup.withinBriefOverlap);
     if (dup.length > 0) { report(dup[0], idx, ' (within brief)'); continue; }
     seen.push(bullet);
   }
