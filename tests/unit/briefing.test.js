@@ -279,15 +279,29 @@ describe('runBriefingPipeline — Gemini retry', () => {
 describe('runBriefingPipeline — resilience', () => {
   beforeEach(() => setupHappyPath());
 
-  it('still saves state after Telegram failure', async () => {
-    sendTelegram.mockRejectedValue(new Error('429'));
-    await runBriefingPipeline();
+  it('retries Telegram and saves state once a retry succeeds', async () => {
+    jest.useFakeTimers();
+    sendTelegram
+      .mockRejectedValueOnce(new Error('fetch failed'))
+      .mockRejectedValueOnce(new Error('fetch failed'))
+      .mockResolvedValue({ result: { message_id: 7 } });
+    const p = runBriefingPipeline();
+    await jest.runAllTimersAsync();
+    await p;
+    expect(sendTelegram).toHaveBeenCalledTimes(3);
     expect(saveState).toHaveBeenCalledWith(MOCK_BRIEF, expect.any(Object));
+    jest.useRealTimers();
   });
 
-  it('does not throw when Telegram fails', async () => {
-    sendTelegram.mockRejectedValue(new Error('429'));
-    await expect(runBriefingPipeline()).resolves.toBeUndefined();
+  it('does NOT save state when Telegram fails every attempt (so tweets are retried next run)', async () => {
+    jest.useFakeTimers();
+    sendTelegram.mockRejectedValue(new Error('fetch failed'));
+    const p = runBriefingPipeline();
+    await jest.runAllTimersAsync();
+    await expect(p).resolves.toBeUndefined();
+    expect(sendTelegram).toHaveBeenCalledTimes(6);
+    expect(saveState).not.toHaveBeenCalled();
+    jest.useRealTimers();
   });
 
   it('does not throw when saveState fails', async () => {

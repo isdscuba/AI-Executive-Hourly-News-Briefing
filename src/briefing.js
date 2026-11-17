@@ -265,14 +265,29 @@ async function runBriefingPipeline({ isOpeningBrief = false } = {}) {
     return;
   }
 
-  // Step 7: Send to Telegram
+  // Step 7: Send to Telegram (with retries — transient "fetch failed" errors
+  // after wake-from-sleep/network blips caused a missed 7am brief on 2026-11-17)
   log('Sending to Telegram...');
-  try {
-    const tgResult = await sendTelegram(cappedBrief);
-    log(`Telegram OK (message_id: ${tgResult?.result?.message_id})`);
-    recordSentBrief(cappedBrief, tgResult?.result?.message_id);
-  } catch (err) {
-    log(`Telegram failed: ${err.message}. Continuing to save state.`);
+  const tgDelays = [0, 5_000, 15_000, 30_000, 60_000, 120_000];
+  let sent = false;
+  for (let i = 0; i < tgDelays.length; i++) {
+    if (tgDelays[i] > 0) await sleep(tgDelays[i]);
+    try {
+      const tgResult = await sendTelegram(cappedBrief);
+      log(`Telegram OK (message_id: ${tgResult?.result?.message_id})`);
+      recordSentBrief(cappedBrief, tgResult?.result?.message_id);
+      sent = true;
+      break;
+    } catch (err) {
+      log(`Telegram failed (attempt ${i + 1}/${tgDelays.length}): ${err.message}`);
+    }
+  }
+
+  // If delivery never succeeded, do NOT save state: the tweets must stay
+  // "unseen" so the next run re-includes them instead of silently dropping the brief.
+  if (!sent) {
+    log('Telegram delivery failed after all retries — state NOT saved; next run will cover these tweets.');
+    return;
   }
 
   // Step 8: Save state for next run (brief text + tweet batches for dedup)
